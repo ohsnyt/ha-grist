@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure Grid Boost",
+        "description": "Set up the initial configuration for Grid Boost.",
+        "data": {
+          "boost_mode": "Boost Mode",
+          "grid_boost_manual": "Manual Grid Boost (%)",
+          "grid_boost_start": "Grid Boost Start Time",
+          "update_hour": "Update Hour",
+          "history_days": "Days of Load History",
+          "minimum_soc": "Minimum State of Charge (%)"
+        },
+        "data_description": {
+          "boost_mode": "Select the boost mode: automatic, manual, off, or testing.",
+          "grid_boost_manual": "Set the manual grid boost value as a percentage (5-99%, suggest 50).",
+          "grid_boost_start": "Set the time to start grid boost (suggest 00:02).",
+          "update_hour": "Set the hour of the day to perform updates (0-23, suggest 22).",
+          "history_days": "Number of days of load history to use for calculations (1-10 days, suggest 4).",
+          "minimum_soc": "Set the minimum state of charge (SOC) value as a percentage (5-99%, suggest 15)."
+        }
+      },
+      "init": {
+        "title": "Update Grid Boost Options",
+        "description": "Update the configuration options for Grid Boost.",
+        "data": {
+          "boost_mode": "Boost Mode",
+          "grid_boost_manual": "Manual Grid Boost (%)",
+          "grid_boost_start": "Grid Boost Start Time",
+          "update_hour": "Update Hour",
+          "history_days": "Days of Load History",
+          "minimum_soc": "Minimum State of Charge (%)"
+        },
+        "data_description": {
+          "boost_mode": "Select the boost mode: automatic, manual, off, or testing.",
+          "grid_boost_manual": "Set the manual grid boost value as a percentage (5-99%, suggest 50).",
+          "grid_boost_start": "Set the time to start grid boost (suggest 00:02).",
+          "update_hour": "Set the hour of the day to perform updates (0-23, suggest 22).",
+          "history_days": "Number of days of load history to use for calculations (1-10 days, suggest 4).",
+          "minimum_soc": "Set the minimum state of charge (SOC) value as a percentage (5-99%, suggest 15)."
+        }
+      }
+    }
+  }
+}

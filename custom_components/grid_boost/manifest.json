@@ -1,0 +1,10 @@
+{
+  "domain": "grid_boost",
+  "name": "Grid Boost",
+  "version": "1.0.0",
+  "codeowners": ["@ohsnyt"],
+  "config_flow": true,
+  "dependencies": ["recorder", "mqtt"],
+  "documentation": "https://github.com/ohsnyt/grid-boost",
+  "iot_class": "cloud_polling"
+}
