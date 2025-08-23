@@ -5,7 +5,7 @@
   "codeowners": ["@ohsnyt"],
   "config_flow": true,
   "dependencies": ["recorder", "mqtt"],
-  "documentation": "https://github.com/ohsnyt/grid-boost",
+  "documentation": "https://github.com/ohsnyt/grid-boost/README.md",
   "issue_tracker": "https://github.com/ohsnyt/ha-grid-boost/issues",
   "iot_class": "cloud_polling"
 }
