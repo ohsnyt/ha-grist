@@ -1,30 +1,17 @@
-"""Classes for integration with Meteo HACS to supply forecast info to Grid Boost Scheduler.
+"""Classes for integration with Solcast HACS to supply forecast info to Grid Boost Schedule.
 
-Placeholder - to be developed.
-
-
-This module contains two public properties:
-    1) forecast: This will return a dictionary with the PV forecast as dict[str, dict[int, int]] where the key is the time in the form of YYYY-MM-DD, the forecast data is a dict of hour, value containing the predicted energy in watt-hours for each hour of the day.
-    3) status: This will return the current status of the Meteo integration, which can be one of the following:
-        - Status.NOT_CONFIGURED: The integration is not configured.
-        - Status.FAULT: There was an error retrieving the forecast data.
-        - Status.NORMAL: The integration is configured and working correctly.
-
-To call the module, you need to create an instance of the Meteo class with the Home Assistant object as the argument. For example:
-    forecaster = Meteo(hass)
-
-NOTE: Key sensors with Meteo integration:
-    sensor.meteo_pv_forecast_forecast_tomorrow: This sensor provides the forecast for tomorrow in kWh.
-    sensor.meteo_pv_forecast_api_last_polled.next_auto_update: This sensor provides
-        the next time the Meteo API will be polled for updates.
-
+This module contains three public properties:
+    1) forecast: Returns a dictionary with the PV forecast as dict[str, dict[int, int]]. Times are local
+    2) next_update: Returns the next time the Solcast API will be polled for updates.
+    3) status: Returns the current status of the Solcast integration.
 """
 
+from __future__ import annotations
+
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from re import S
-from typing import Never
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -33,10 +20,12 @@ from homeassistant.util import dt as dt_util
 from .const import (
     DEBUGGING,
     DEFAULT_PV_MAX_DAYS,
+    DEFAULT_SOLCAST_PERCENTILE,
     FORECAST_KEY,
     PURPLE,
     RESET,
-    SENSOR_METEO_BASE,
+    SENSOR_FORECAST_SOLAR_TODAY,
+    SENSOR_FORECAST_SOLAR_TOMORROW,
     STORAGE_VERSION,
     Status,
 )
@@ -46,22 +35,36 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG if DEBUGGING else logging.INFO)
 
 
-class Meteo:
-    """Class to interface between the Grid Boost Scheduler and the Meteo integration."""
+@dataclass
+class HourlyForecast:
+    """Dataclass to represent hourly forecast data."""
 
-    # Constructor
+    hour: int
+    pv_estimate: int
+    pv_estimate10: int
+    pv_estimate90: int
+
+
+class Solcast:
+    """Class to interface between the Grid Boost Scheduler and the Solcast integration."""
+
     def __init__(
-        self,
-        hass: HomeAssistant,
+        self, hass: HomeAssistant, percentile: int = DEFAULT_SOLCAST_PERCENTILE
     ) -> None:
-        """Initialize key variables."""
+        """Initialize key variables.
 
-        # General info
+        Args:
+            hass: The Home Assistant instance.
+            percentile: The desired percentile for the forecast (default is 20).
+
+        """
         self.hass = hass
         self._status = Status.NOT_CONFIGURED
+        self._percentile = percentile
         self._next_update = dt_util.now() + timedelta(minutes=-1)
         self._forecast: dict[str, dict[int, int]] = {}
         self._unsub_update = None
+
         # Initialize storage
         self._store = Store(hass, STORAGE_VERSION, FORECAST_KEY)
 
@@ -81,21 +84,24 @@ class Meteo:
                 dt = datetime.fromisoformat(next_update_str)
                 self._next_update = dt_util.as_local(dt)
             else:
-                self._next_update = dt_util.now() + timedelta(minutes=-1)
+                self._next_update = dt_util.now() + timedelta(
+                    minutes=-1
+                )
             forecast_dates = list(self._forecast.keys())
             logger.debug("Loaded forecast data from storage: %s", forecast_dates)
+            logger.debug("The data for today is: %s", self._forecast.get(dt_util.now().date().strftime("%Y-%m-%d"), {}))
         else:
             logger.debug("No forecast data found in storage, starting fresh")
 
     async def update_data(self) -> None:
-        """Update the Meteo data."""
-        forecast_prefixes = [SENSOR_METEO_BASE]
+        """Fetch and process data from Home Assistant sensors."""
+        forecast_prefixes = [SENSOR_FORECAST_SOLAR_TODAY, SENSOR_FORECAST_SOLAR_TOMORROW]
 
         forecast_days_ids = await find_entities_by_prefixes(
             self.hass, forecast_prefixes
         )
         if not forecast_days_ids:
-            logger.error("No Meteo forecast found")
+            logger.error("No Solcast forecast found")
             self._status = Status.FAULT
             return
 
@@ -112,28 +118,38 @@ class Meteo:
         self._remove_old_forecasts()
 
         logger.info(
-            "\n%sUpdated Meteo forecast data for %d days%s",
+            "\n%sUpdated Solcast forecast data for %d days%s",
             PURPLE,
             len(self._forecast),
-            RESET,
+            RESET
         )
+        # Save updated forecast data to storage
+        if self._forecast:
+            self._store.async_delay_save(
+                lambda: {
+                    "forecast": self._forecast,
+                    "next_update": self._next_update.isoformat(),
+                }
+            )
+
+        self._status = Status.NORMAL
 
     async def _process_forecast_day(self, entity_id: str) -> bool:
         """Process a single forecast day."""
         result = await get_entity(hass=self.hass, entity_id=entity_id)
         if not result:
-            logger.error("No Meteo forecast data found for %s", entity_id)
+            logger.error("No Solcast forecast data found for %s", entity_id)
             return False
 
         attributes = result.get("attributes")
         if not attributes:
-            logger.warning("No attributes found for %s. Probably a daily total.", entity_id)
-            return True
+            logger.error("No forecast attributes found for %s", entity_id)
+            return False
 
-        detailed_hourly = attributes.get("wh_period")
+        detailed_hourly = attributes.get("detailedHourly")
         if not detailed_hourly:
-            logger.warning("No forecast wh_period attribute found for %s. Probably a daily total.", entity_id)
-            return True
+            logger.error("No detailed forecast data found for %s", entity_id)
+            return False
 
         next_day_date, hourly_forecast = await self._parse_detailed_hourly(
             detailed_hourly
@@ -146,30 +162,34 @@ class Meteo:
         return True
 
     async def _parse_detailed_hourly(
-        self, detailed_hourly: dict[str, float]
+        self, detailed_hourly: list[dict]
     ) -> tuple[str | None, dict[int, int]]:
-        """Parse detailed hourly forecast data.
+        """Parse detailed hourly forecast data."""
+        hourly_forecast = {}
+        next_day_date = None
 
-        Args:
-            detailed_hourly: A dict with ISO datetime strings as keys and float values for each hour.
+        for idx, next_data in enumerate(detailed_hourly):
+            if not next_data:
+                continue
 
-        Returns:
-            A tuple of (date as 'YYYY-MM-DD', {hour: value}) or (None, {}) if input is empty.
+            period_start_date = next_data.get("period_start")
+            if idx == 0 and period_start_date:
+                next_day_date = period_start_date.strftime("%Y-%m-%d")
 
-        """
-        if not detailed_hourly:
-            return None, {}
+            hour = period_start_date.hour if period_start_date else 0
+            pv_est10 = next_data.get("pv_estimate10", 0)
+            pv_est = next_data.get("pv_estimate", 0)
+            pv_est90 = next_data.get("pv_estimate90", 0)
 
-        # Get the date string from the first key
-        first_key = next(iter(detailed_hourly))
-        date_str = first_key[:10]
+            target_pv = (
+                (pv_est10 + (self._percentile - 10) / 40 * (pv_est - pv_est10))
+                if self._percentile <= 50
+                else (pv_est + (self._percentile - 50) / 40 * (pv_est90 - pv_est))
+            ) * 1000
 
-        # Build the hourly forecast dict
-        hourly_forecast = {
-            int(key[11:13]): int(value) for key, value in detailed_hourly.items()
-        }
+            hourly_forecast[hour] = int(target_pv)
 
-        return date_str, hourly_forecast
+        return next_day_date, hourly_forecast
 
     def _remove_old_forecasts(self) -> None:
         """Remove old forecast data from the forecast history."""
@@ -177,8 +197,7 @@ class Meteo:
         self._forecast = {
             date: data
             for date, data in self._forecast.items()
-            if (parsed_date := dt_util.parse_date(date)) is not None
-            and parsed_date >= cutoff
+            if (parsed_date := dt_util.parse_date(date)) is not None and parsed_date >= cutoff
         }
 
     async def async_unload(self) -> None:
@@ -199,8 +218,7 @@ class Meteo:
         return {
             date: data
             for date, data in self._forecast.items()
-            if (parsed_date := dt_util.parse_date(date)) is not None
-            and parsed_date > cutoff
+            if (parsed_date := dt_util.parse_date(date)) is not None and parsed_date > cutoff
         }
 
     @property

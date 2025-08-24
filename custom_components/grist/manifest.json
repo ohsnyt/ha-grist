@@ -1,6 +1,6 @@
 {
-  "domain": "grid_boost",
-  "name": "Grid Boost",
+  "domain": "grist",
+  "name": "Grist",
   "codeowners": ["@ohsnyt"],
   "config_flow": true,
   "dependencies": ["recorder", "mqtt"],

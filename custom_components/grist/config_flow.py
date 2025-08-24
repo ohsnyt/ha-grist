@@ -13,15 +13,15 @@ from homeassistant.core import callback
 from .const import (
     BOOST_MODE_OPTIONS,
     DEFAULT_BATTERY_MIN_SOC,
-    DEFAULT_GRID_BOOST_MODE,
-    DEFAULT_GRID_BOOST_START,
+    DEFAULT_GRIST_MODE,
+    DEFAULT_GRIST_START,
     DEFAULT_LOAD_AVERAGE_DAYS,
-    DEFAULT_MANUAL_GRID_BOOST,
+    DEFAULT_MANUAL_GRIST,
     DEFAULT_UPDATE_HOUR,
     DOMAIN,
     DOMAIN_STR,
-    GRID_BOOST_MAX_SOC,
-    GRID_BOOST_MIN_SOC,
+    GRIST_MAX_SOC,
+    GRIST_MIN_SOC,
     HISTORY_MAX,
     HISTORY_MIN,
     HOUR_MAX,
@@ -32,19 +32,22 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def get_options_schema(options: dict[str, Any]) -> vol.Schema:
-    """Return the options schema for Grid Boost."""
+    """Return the options schema for Grist."""
     return vol.Schema(
         {
             vol.Required(
-                "boost_mode", default=options.get("boost_mode", DEFAULT_GRID_BOOST_MODE)
+                "boost_mode", default=options.get("boost_mode", DEFAULT_GRIST_MODE)
             ): vol.In(BOOST_MODE_OPTIONS),
             vol.Required(
-                "grid_boost_manual",
-                default=options.get("grid_boost_manual", DEFAULT_MANUAL_GRID_BOOST),
-            ): vol.All(vol.Coerce(int), vol.Range(min=GRID_BOOST_MIN_SOC, max=GRID_BOOST_MAX_SOC)),
+                "grist_manual",
+                default=options.get("grist_manual", DEFAULT_MANUAL_GRIST),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=GRIST_MIN_SOC, max=GRIST_MAX_SOC),
+            ),
             vol.Required(
-                "grid_boost_start",
-                default=options.get("grid_boost_start", DEFAULT_GRID_BOOST_START),
+                "grist_start",
+                default=options.get("grist_start", DEFAULT_GRIST_START),
             ): str,
             vol.Required(
                 "update_hour",
@@ -57,7 +60,10 @@ def get_options_schema(options: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 "minimum_soc",
                 default=options.get("minimum_soc", DEFAULT_BATTERY_MIN_SOC),
-            ): vol.All(vol.Coerce(int), vol.Range(min=GRID_BOOST_MIN_SOC, max=GRID_BOOST_MAX_SOC)),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=GRIST_MIN_SOC, max=GRIST_MAX_SOC),
+            ),
         }
     )
 
@@ -102,17 +108,13 @@ class GridBoostOptionsFlow(config_entries.OptionsFlow):
             options = dict(self.config_entry.options)
             options.update(user_input)
             # Update the config entry with new options
-            worked =  self.hass.config_entries.async_update_entry(
+            worked = self.hass.config_entries.async_update_entry(
                 self.config_entry, options=options
             )
-            _LOGGER.debug(
-                "Updated Grid Boost options: %s, saved: %s", options, worked
-            )
+            _LOGGER.debug("Updated Grid Boost options: %s, saved: %s", options, worked)
             # Schedule a reload of the config entry to apply the changes
             self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
-            _LOGGER.info(
-                "Scheduled reload for Grid Boost. Now going to do async_abort"
-            )
+            _LOGGER.info("Scheduled reload for Grid Boost. Now going to do async_abort")
             # Return without creating a new entry, as options are already updated
             return self.async_abort(reason="configuration_updated")
 

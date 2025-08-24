@@ -140,8 +140,8 @@ class SchedulerEntity(CoordinatorEntity):
         tomorrow: str = (now + timedelta(days=1)).strftime("%a")
         return {
             "status": self.coordinator.data.get("status", Status.NOT_CONFIGURED).state,
-            "manual": self.coordinator.data.get("manual_grid_boost", 30),
-            "calculated": self.coordinator.data.get("grid_boost_calculated", 20),
+            "manual": self.coordinator.data.get("manual_grist", 30),
+            "calculated": self.coordinator.data.get("grist_calculated", 20),
             "min_soc": self.coordinator.data.get("min_soc", 20),
             "load_days": self.coordinator.data.get("load_days", 3),
             "update_hour": self.coordinator.data.get("update_hour", 3),
@@ -162,7 +162,7 @@ class SchedulerEntity(CoordinatorEntity):
     @property
     def state(self) -> str:
         """Return the state of the sensor."""
-        return self.coordinator.data.get("grid_boost_mode", "State unknown")
+        return self.coordinator.data.get("grist_mode", "State unknown")
 
 
 class RatioEntity(CoordinatorEntity):
@@ -506,10 +506,10 @@ class BoostEntity(CoordinatorEntity):
     def extra_state_attributes(self) -> dict[str, str]:
         """Return the extra state attributes."""
         return {
-            "mode": self.coordinator.data.get("grid_boost_mode", 20),
-            "calculated": self.coordinator.data.get("grid_boost_calculated", 20),
-            "manual": self.coordinator.data.get("grid_boost_manual", 20),
-            "actual": self.coordinator.data.get("grid_boost_actual", 20),
+            "mode": self.coordinator.data.get("grist_mode", 20),
+            "calculated": self.coordinator.data.get("grist_calculated", 20),
+            "manual": self.coordinator.data.get("grist_manual", 20),
+            "actual": self.coordinator.data.get("grist_actual", 20),
             "min_soc": self.coordinator.data.get("min_soc", 20),
             "load_days": self.coordinator.data.get("load_days", 3),
             "update_hour": self.coordinator.data.get("update_hour", 23),
@@ -528,7 +528,7 @@ class BoostEntity(CoordinatorEntity):
     @property
     def state(self) -> str:
         """Return the state of the sensor."""
-        return self.coordinator.data.get("grid_boost_actual", 30)
+        return self.coordinator.data.get("grist_actual", 30)
 
 
 class ApexChartEntity(CoordinatorEntity):
@@ -579,9 +579,7 @@ class ApexChartEntity(CoordinatorEntity):
         my_load: dict[datetime, int] = self._coordinator.data.get(
             "forecast_chart_load", {}
         )
-        my_pv: dict[datetime, int] = self._coordinator.data.get(
-            "forecast_chart_pv", {}
-        )
+        my_pv: dict[datetime, int] = self._coordinator.data.get("forecast_chart_pv", {})
         my_soc: dict[datetime, int] = self._coordinator.data.get(
             "forecast_chart_soc", {}
         )

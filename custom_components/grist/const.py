@@ -1,14 +1,14 @@
 """Constants for the Grid Boost integration."""
 
 # Basic integration details.
-# NOTE: Will Prouse recommends that in a solar system, the battery can cycle
+# NOTE: Will Prouse. the solar diy guy (diysolarforum.com) clearly states that in a solar system, the battery can cycle
 #       from 0% to 100% each day with no ill effects.
-#       Therefore we allow the battery to discharge to 2% (in extraordinary circumstances).
-#       However, experience shows that there are some mornings between 6-9am when we are using
-#       more power than usual. Therefore we recommend the minimum boost be 20%.
+#       Therefore I allow the battery to discharge to 2% (in extraordinary circumstances).
+#       My experience shows that there are some mornings between 6-9am when I use
+#       more power than usual. Therefore I set my minimum boost to 20%. This gives me a 15% buffer before the battery becomes seriously low.
 #
-#       This allows us to maximize how much power we generate by PV, and minimize how much
-#       power we require from the grid.
+#       This allows me to maximize how much power I generate by PV, and minimize how much
+#       power I require from the grid.
 #
 #       In my circumstance, off-peak rates are midnight to 6 am. I therefore start off-peak
 #       charging at a few minutes past midnight.
@@ -55,8 +55,8 @@ BOOST_MODE_OPTIONS = (
 )
 
 # Used for init, config flow, and coordinator
-DOMAIN = "grid_boost"
-DOMAIN_STR = "Grid Boost"
+DOMAIN = "grist"
+DOMAIN_STR = "GRIST"
 PLATFORMS = ["sensor"]
 UPDATE_INTERVAL = 10  # Update interval in seconds
 
@@ -64,7 +64,7 @@ UPDATE_INTERVAL = 10  # Update interval in seconds
 DEBUGGING = False
 
 # Storage keys for the Grid Boost data
-FORECAST_KEY = "grid_boost_forecast"
+FORECAST_KEY = "grist_forecast"
 STORAGE_VERSION = 1
 
 # Sensor names used in the integration
@@ -94,20 +94,20 @@ CORE_FORECAST_FILTER = "config_entry_solar_forecast"
 DEFAULT_BATTERY_CAPACITY_AH = 100
 DEFAULT_BATTERY_FLOAT_VOLTAGE = 56.2
 DEFAULT_BATTERY_MIN_SOC = 20
-DEFAULT_GRID_BOOST_MODE = BoostMode.TESTING
-DEFAULT_GRID_BOOST_START = "00:02"
-DEFAULT_GRID_BOOST_STARTING_SOC = 50
+DEFAULT_GRIST_MODE = BoostMode.TESTING
+DEFAULT_GRIST_START = "00:02"
+DEFAULT_GRIST_STARTING_SOC = 50
 DEFAULT_INVERTER_EFFICIENCY = 96.6
 DEFAULT_LOAD_AVERAGE_DAYS = 4
 DEFAULT_LOAD_ESTIMATE = 1000
-DEFAULT_MANUAL_GRID_BOOST = 50
+DEFAULT_MANUAL_GRIST = 50
 DEFAULT_PV_MAX_DAYS = 21
 DEFAULT_UPDATE_HOUR = 22
 DEFAULT_DONT_BOOST_BEFORE = 6
 
 # Minimum and maximum values for config_flow settings
-GRID_BOOST_MIN_SOC = 5
-GRID_BOOST_MAX_SOC = 99
+GRIST_MIN_SOC = 5
+GRIST_MAX_SOC = 99
 HOUR_MIN = 0
 HOUR_MAX = 23
 HISTORY_MIN = 1

@@ -19,9 +19,9 @@ from .boost_calc import calculate_required_boost
 from .const import (
     DEBUGGING,
     DEFAULT_BATTERY_MIN_SOC,
-    DEFAULT_GRID_BOOST_MODE,
-    DEFAULT_GRID_BOOST_START,
-    DEFAULT_GRID_BOOST_STARTING_SOC,
+    DEFAULT_GRIST_MODE,
+    DEFAULT_GRIST_START,
+    DEFAULT_GRIST_STARTING_SOC,
     DEFAULT_INVERTER_EFFICIENCY,
     DEFAULT_LOAD_AVERAGE_DAYS,
     DEFAULT_UPDATE_HOUR,
@@ -73,9 +73,9 @@ class GridBoostScheduler:
         hass: HomeAssistant,
         config_entry: ConfigEntry,
         coordinator: GridBoostUpdateCoordinator | None,
-        boost_mode: str = DEFAULT_GRID_BOOST_MODE,
-        grid_boost_manual: int = DEFAULT_GRID_BOOST_STARTING_SOC,
-        grid_boost_start: str = DEFAULT_GRID_BOOST_START,
+        boost_mode: str = DEFAULT_GRIST_MODE,
+        grist_manual: int = DEFAULT_GRIST_STARTING_SOC,
+        grist_start: str = DEFAULT_GRIST_START,
         update_hour: int = DEFAULT_UPDATE_HOUR,
         minimum_soc: int = DEFAULT_BATTERY_MIN_SOC,
         history_days: int = DEFAULT_LOAD_AVERAGE_DAYS,
@@ -87,8 +87,8 @@ class GridBoostScheduler:
             config_entry: The configuration entry for this integration.
             coordinator: The update coordinator, if available.
             boost_mode: The current boost mode (e.g., auto, manual, off).
-            grid_boost_manual: The manually set SOC for grid boost.
-            grid_boost_start: The time to start grid boost (as a string, e.g., "00:30").
+            grist_manual: The manually set SOC for grid boost.
+            grist_start: The time to start grid boost (as a string, e.g., "00:30").
             update_hour: The hour of the day to perform updates.
             minimum_soc: The minimum allowed battery state of charge.
             history_days: The number of days to use for load average calculations.
@@ -98,8 +98,8 @@ class GridBoostScheduler:
         self.config_entry = config_entry
         self.coordinator = coordinator
         self.boost_mode = boost_mode
-        self.grid_boost_manual = grid_boost_manual
-        self.grid_boost_start = grid_boost_start
+        self.grist_manual = grist_manual
+        self.grist_start = grist_start
         self.update_hour = update_hour
         self.minimum_soc = minimum_soc
         self.days_of_load_history: int = history_days
@@ -114,8 +114,8 @@ class GridBoostScheduler:
         self._daily_task_next_start = dt_util.now()
 
         # Grid Boost settings
-        self.grid_boost_actual: int = DEFAULT_GRID_BOOST_STARTING_SOC
-        self.grid_boost_calculated: int = DEFAULT_GRID_BOOST_STARTING_SOC
+        self.grist_actual: int = DEFAULT_GRIST_STARTING_SOC
+        self.grist_calculated: int = DEFAULT_GRIST_STARTING_SOC
         self.pv_adjusted_estimates_history: dict[str, dict[int, int]] = {}
 
     async def _select_forecaster(self) -> bool:
@@ -218,16 +218,12 @@ class GridBoostScheduler:
             adjusted_pv=self.daily.forecast_tomorrow_adjusted,
             average_hourly_load=self.daily.average_hourly_load,
         )
-        self.grid_boost_calculated = (
-            int(boost) if boost else int(self.grid_boost_manual)
-        )
+        self.grist_calculated = int(boost) if boost else int(self.grist_manual)
         # Write the boost to the inverter if we are in automatic or manual mode
         if self.boost_mode == BoostMode.AUTOMATIC:
-            await set_number(
-                self.hass, NUMBER_CAPACITY_POINT_1, self.grid_boost_calculated
-            )
+            await set_number(self.hass, NUMBER_CAPACITY_POINT_1, self.grist_calculated)
         elif self.boost_mode == BoostMode.MANUAL:
-            await set_number(self.hass, NUMBER_CAPACITY_POINT_1, self.grid_boost_manual)
+            await set_number(self.hass, NUMBER_CAPACITY_POINT_1, self.grist_manual)
 
         # Reset next start time to either the start of the next day or the desired refresh hour.
         if dt_util.now().hour < self.update_hour:
@@ -379,10 +375,10 @@ class GridBoostScheduler:
                 logger.warning(
                     "Grid boost actual value is invalid, using default value."
                 )
-                boost_actual = DEFAULT_GRID_BOOST_STARTING_SOC
+                boost_actual = DEFAULT_GRIST_STARTING_SOC
         else:
             logger.warning("Grid boost actual value is None, using default value.")
-            boost_actual = DEFAULT_GRID_BOOST_STARTING_SOC
+            boost_actual = DEFAULT_GRIST_STARTING_SOC
 
         remaining_battery_time: int = await self._calculate_remaining_battery_time()
 
@@ -393,14 +389,12 @@ class GridBoostScheduler:
                 now + timedelta(minutes=remaining_battery_time)
             ).strftime("%a %-I:%M %p"),
             "battery_time_remaining": round(remaining_battery_time / 60, 1),
-            "grid_boost_actual": boost_actual
-            if boost_actual is not None
-            else "Unknown",
-            "grid_boost_manual": self.grid_boost_manual,
-            "grid_boost_mode": self.boost_mode,
-            "grid_boost_calculated": self.grid_boost_calculated,
-            "grid_boost_day": f"{(now + timedelta(days=1)).strftime('%A')} the {ordinal((now + timedelta(days=1)).day)}",
-            # "grid_boost_start": self.grid_boost_start,
+            "grist_actual": boost_actual if boost_actual is not None else "Unknown",
+            "grist_manual": self.grist_manual,
+            "grist_mode": self.boost_mode,
+            "grist_calculated": self.grist_calculated,
+            "grist_day": f"{(now + timedelta(days=1)).strftime('%A')} the {ordinal((now + timedelta(days=1)).day)}",
+            # "grist_start": self.grist_start,
             "load_days": self.days_of_load_history,
             # "update_hour": self.update_hour,
             "load_averages": self.daily.average_hourly_load if self.daily else {},

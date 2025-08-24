@@ -1,6 +1,6 @@
-# Grid Boost Scheduler for Home Assistant
+# GRIST, the Grid Boost Scheduler for Home Assistant
 
-The **Grid Boost Scheduler** custom component helps Home Assistant users minimize grid electricity costs by intelligently managing battery charging and solar usage in homes equipped with solar panels and battery storage. It is designed for systems where the battery can supply most or all of the home's daily electricity needs. The scheduler automatically determines how much to charge the battery during off-peak hours, aiming to avoid grid usage during expensive peak times. It adapts to changing weather and load conditions using solar forecasts and historical consumption data, and provides manual override options for special circumstances.
+**GRIST** helps Home Assistant users minimize grid electricity costs by intelligently managing battery charging and solar usage in homes equipped with solar panels and battery storage. It is designed for systems where the battery can supply most or all of the home's daily electricity needs. The scheduler automatically determines how much to charge the battery during off-peak hours, aiming to avoid grid usage during expensive peak times. It adapts to changing weather and load conditions using solar forecasts and historical consumption data, and provides manual override options for special circumstances.
 
 ---
 
@@ -83,7 +83,7 @@ The **Grid Boost Scheduler** custom component helps Home Assistant users minimiz
 ### Initial Setup
 
 1. **Install the Integration:**
-   Copy the `grid_boost` folder to your Home Assistant `custom_components` directory. HACS installation will be added in a future release.
+   Copy the `grist` folder to your Home Assistant `custom_components` directory. HACS installation will be added in a future release.
 
 2. **Add via Home Assistant UI:**
    Go to *Settings → Devices & Services → Add Integration* and search for "Grid Boost". Install the Grid Boost integration.
@@ -117,7 +117,7 @@ The **Grid Boost Scheduler** custom component helps Home Assistant users minimiz
 - `daily_calcs.py` – Daily calculation logic for PV/load/boost
 - `entity.py` – Entity base classes and helpers
 - `forecast_solar.py`, `solcast.py`, `meteo.py` – Forecast provider modules
-- `grid_boost.py` – Main scheduler and calculation logic
+- `grist.py` – Main scheduler and calculation logic
 - `sensor.py` – Sensor entity definitions
 - `services.yaml` – Service definitions
 - `strings.json` – UI translation strings

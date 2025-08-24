@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import logging
 from typing import Any
 
-# from config.custom_components.grid_boost.solcast import HourlyForecast
+# from config.custom_components.grist.solcast import HourlyForecast
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.statistics import (
     StatisticsRow,
@@ -206,7 +206,9 @@ async def get_multiday_hourly_states(
         if isinstance(start_value, (int, float)):
             start = dt_util.as_local(datetime.fromtimestamp(start_value))
         else:
-            logger.warning("Invalid start value for %s entry: %s", entity_id, start_value)
+            logger.warning(
+                "Invalid start value for %s entry: %s", entity_id, start_value
+            )
             continue
         hour = start.hour
         raw = entry.get("mean", default)
@@ -222,6 +224,7 @@ async def get_multiday_hourly_states(
             values["mean"] = int(round(values["mean"] / values["count"]))
     # Convert the hourly data to a dictionary with hour as the key and mean as the value
     return dict(sorted((hour, values["mean"]) for hour, values in hourly_data.items()))
+
 
 async def get_historical_hourly_states(
     hass: HomeAssistant, entity_id: str, days: int = 1, default: float = 0.0
@@ -278,7 +281,9 @@ async def get_historical_hourly_states(
             entry_start_utc = datetime.fromtimestamp(entry_start_value, tz=UTC)
             entry_start = dt_util.as_local(entry_start_utc)
         else:
-            logger.warning("Invalid start value for %s entry: %s", entity_id, entry_start_value)
+            logger.warning(
+                "Invalid start value for %s entry: %s", entity_id, entry_start_value
+            )
             continue
         date_str: str = entry_start.strftime("%Y-%m-%d")
         # First time through, set the last_date_str to the current date_str
@@ -320,9 +325,8 @@ async def get_number(
             logger.error("Invalid number state for %s: %s", entity_id, state["state"])
     return default
 
-async def set_number(
-    hass: HomeAssistant, entity_id: str, value: int
-) -> None:
+
+async def set_number(hass: HomeAssistant, entity_id: str, value: int) -> None:
     """Set the value of a number entity.
 
     Args:
@@ -331,7 +335,9 @@ async def set_number(
         value (int): The value to set.
 
     """
-    await hass.services.async_call("number", "set_value", {"entity_id": entity_id, "value": value})
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": entity_id, "value": value}
+    )
 
 
 def start_and_end_utc(days=1) -> tuple[datetime, datetime]:
@@ -346,8 +352,12 @@ def start_and_end_utc(days=1) -> tuple[datetime, datetime]:
     """
 
     # Subtracting one second from midnight today gives 23:59:59 of the previous day.
-    local_end_time = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(seconds=1)
-    local_start_time = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days)
+    local_end_time = dt_util.now().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(seconds=1)
+    local_start_time = dt_util.now().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(days=days)
     end_time = dt_util.as_utc(local_end_time)
     start_time = dt_util.as_utc(local_start_time)
 

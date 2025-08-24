@@ -61,8 +61,8 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         suggested_display_precision=1,
     ),
     # Grid boost related sensors.
-    "grid_boost_calculated": OhSnytSensorEntityDescription(
-        key="grid_boost_calculated",
+    "grist_calculated": OhSnytSensorEntityDescription(
+        key="grist_calculated",
         icon="mdi:battery",
         name="Calculated Grid Boost SoC",
         native_unit_of_measurement="%",
@@ -70,8 +70,8 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
     ),
-    "grid_boost_actual": OhSnytSensorEntityDescription(
-        key="grid_boost_actual",
+    "grist_actual": OhSnytSensorEntityDescription(
+        key="grist_actual",
         icon="mdi:battery",
         name="Actual Grid Boost SoC",
         native_unit_of_measurement="%",
@@ -79,8 +79,8 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
     ),
-    "grid_boost_manual": OhSnytSensorEntityDescription(
-        key="grid_boost_manual",
+    "grist_manual": OhSnytSensorEntityDescription(
+        key="grist_manual",
         icon="mdi:battery",
         name="Manual Grid Boost SoC",
         native_unit_of_measurement="%",
@@ -126,8 +126,8 @@ async def async_setup_entry(
     if plant_id is None:
         logger.error("This never happens: Plant ID is missing from coordinator data.")
         return
-    unique_prefix = f"{plant_id}_grid_boost"
-    parent = f"{unique_prefix}_grid_boost"
+    unique_prefix = f"{plant_id}_grist"
+    parent = f"{unique_prefix}_grist"
 
     # Add special entity sensors: Scheduler, Battery, Cloud, Plant, Inverter, Shading and Load (from entity.py)
     entity_list = [
@@ -210,8 +210,8 @@ class OhSnytSensor(CoordinatorEntity[GridBoostUpdateCoordinator], SensorEntity):
     @property
     def name(self) -> str | None:
         """Return the name of the sensor."""
-        if self.entity_description.key == "grid_boost_calculated":
-            day = self.coordinator.data.get("grid_boost_day")
+        if self.entity_description.key == "grist_calculated":
+            day = self.coordinator.data.get("grist_day")
             if day:
                 return f"{self._attr_name or ''} ({day})"
         return self._attr_name
