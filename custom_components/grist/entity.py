@@ -1,11 +1,13 @@
-"""Entity classes for Grid Boost entity.
+"""Entity classes for GRIST, a Grid Boost Scheduler.
 
-This module defines various entity classes used in the Grid Boost Scheduler integration.
-(These are specialized sensors. They share some similarity with the sensors, notably the use of "im_a" to identify the entity type.)
-Each entity class represents a different aspect of the Grid Boost that is of special interest to the user:
-    the scheduler,
-    the calculated daily shading, and
-    the calculated average daily load.
+This module defines various entity classes used in GRIST.
+Each entity class represents a different aspect of the GRIST Scheduler that may be of special interest to the user:
+    the GRIST overview,
+    the calculated average daily load,
+    the state of the battery,
+    the calculated PV ratio, and
+    various estimated PV forecasts (adjusted by the ratio).
+There is also a special entity to provide information in a form that can be shown with an Apex Chart dashboard card. This will require some user customization.
 """
 
 from datetime import datetime, timedelta
@@ -109,9 +111,9 @@ class SchedulerEntity(CoordinatorEntity):
 
         super().__init__(coordinator)
         self._coordinator = coordinator
-        self._attr_unique_id = f"{entry_id}_scheduler"
+        self._attr_unique_id = f"{entry_id}_GRIST_scheduler"
         self._attr_icon = "mdi:toggle-switch"
-        self._attr_name = "GB scheduler"
+        self._attr_name = "GRIST scheduler"
         self._device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=self._attr_name,
@@ -166,11 +168,10 @@ class SchedulerEntity(CoordinatorEntity):
 
 
 class RatioEntity(CoordinatorEntity):
-    """Representation of a PV Shading Ratio.
+    """Representation of a PV Ratio.
 
-    This sensor is used to display the shading ratio for each hour of the day if available. If there is more
-    sun than expected, this sensor will display the ratio as a positive number.
-    If we are unable to get the shading ratio, the sensor will display "No shading percentages available".
+    This sensor is used to display the PV ratio for each hour of the day if available. If there is more sun than expected, this sensor will display the ratio as number greater than 1.0. If there is shading for the hour, it will display a number less than 1.0
+    If we are unable to get the PV ratio, the sensor will display "No PV ratios available".
     """
 
     def __init__(
@@ -185,7 +186,7 @@ class RatioEntity(CoordinatorEntity):
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_pv_ratio"
         self._attr_icon = "mdi:toggle-switch"
-        self._attr_name = "GB PV ratio"
+        self._attr_name = "GRIST PV ratio"
         self._count: int = 0
         self._device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
@@ -221,14 +222,14 @@ class RatioEntity(CoordinatorEntity):
 
     @property
     def state(self) -> str | int | float | None:
-        """Return the count of hours with ratios > 0."""
+        """Return the count of hours with ratios < 1.0."""
         if not self._coordinator.data or "pv_ratios" not in self._coordinator.data:
-            return "No shading percentages available"
-        # Count hours with ratios < 0
+            return "No PV ratios available"
+        # Count hours with ratios < 1.0
         count = 0
         all_hours = self._coordinator.data.get("pv_ratios", {})
         for ratio in all_hours.values():
-            if ratio < 0:
+            if ratio < 1.0:
                 count += 1
         if count == 1:
             return "1 hour with shading"
@@ -255,7 +256,7 @@ class LoadEntity(CoordinatorEntity):
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_load"
         self._attr_icon = "mdi:toggle-switch"
-        self._attr_name = "GB load"
+        self._attr_name = "GRIST load"
         self._device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=self._attr_name,
@@ -323,7 +324,7 @@ class PVEntity_today(CoordinatorEntity):
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_pv_generation_today"
         self._attr_icon = "mdi:toggle-switch"
-        self._attr_name = "GB PV Today"
+        self._attr_name = "GRIST PV Today"
         self._device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=self._attr_name,
@@ -386,7 +387,7 @@ class PVEntity_tomorrow(CoordinatorEntity):
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_pv_generation_tomorrow"
         self._attr_icon = "mdi:toggle-switch"
-        self._attr_name = "GB PV Tomorrow"
+        self._attr_name = "GRIST PV Tomorrow"
         self._device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=self._attr_name,
@@ -479,56 +480,6 @@ class BatteryLifeEntity(CoordinatorEntity):
             "battery_exhausted", dt_util.now().strftime("%a %-I:%M %p")
         )
         return remaining
-
-
-class BoostEntity(CoordinatorEntity):
-    """Class for Grid Boost entity."""
-
-    def __init__(
-        self,
-        entry_id: str,
-        coordinator: DataUpdateCoordinator[dict[str, Any]],
-        # parent: str,
-    ) -> None:
-        """Initialize the sensor."""
-
-        super().__init__(coordinator)
-        self._coordinator = coordinator
-        self._attr_unique_id = f"{entry_id}_boost"
-        self._attr_icon = "mdi:toggle-switch"
-        self._attr_name = "Grid Boost"
-        self._device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=self._attr_name,
-        )
-
-    @property
-    def extra_state_attributes(self) -> dict[str, str]:
-        """Return the extra state attributes."""
-        return {
-            "mode": self.coordinator.data.get("grist_mode", 20),
-            "calculated": self.coordinator.data.get("grist_calculated", 20),
-            "manual": self.coordinator.data.get("grist_manual", 20),
-            "actual": self.coordinator.data.get("grist_actual", 20),
-            "min_soc": self.coordinator.data.get("min_soc", 20),
-            "load_days": self.coordinator.data.get("load_days", 3),
-            "update_hour": self.coordinator.data.get("update_hour", 23),
-        }
-
-    @property
-    def name(self) -> str | None:
-        """Return the name of the sensor."""
-        return self._attr_name
-
-    @property
-    def unique_id(self) -> str | None:
-        """Return a unique ID."""
-        return self._attr_unique_id
-
-    @property
-    def state(self) -> str:
-        """Return the state of the sensor."""
-        return self.coordinator.data.get("grist_actual", 30)
 
 
 class ApexChartEntity(CoordinatorEntity):

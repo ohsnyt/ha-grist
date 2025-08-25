@@ -6,6 +6,7 @@ The **Grid Boost Scheduler** custom component helps Home Assistant users minimiz
 
 ## Quality Scale Rules
 
+## Bronze
 - action-setup:
     This integration does not expose any user-triggerable actions; all actions are handled internally based on configuration options.
 
@@ -13,26 +14,40 @@ The **Grid Boost Scheduler** custom component helps Home Assistant users minimiz
 
 - common-modules: I have functions that are similar to the build-in functions, but provide error checking and default values. The prevents the need to duplicate error checking when those functions are used in different places in my code. For example, I have a helper function called get_state which returns the state of an entity (as opposed to the entity with the associated state, attributes, etc.). If the entity is not present or fails in some way, this helper function manages those error conditions.
 
+- config-flow: done
 
+- config-flow-test-coverage: todo (having trouble getting pytest to run in my docker instance. Will have to try again with a new instance.)
 
-rules:
+- dependency-transparency: This integration is dependant upon the home assistant statistics recorder as well as MQTT integration. It further depends upon Solar Assistant, an external hardware/software system to supply sensor information necessary for this integration. Also required is one of three other integrations to supply solar forcast information: Solcast, Meteo or Forecast.Solar. See the documentation for details.
 
-## Bronze
-  common-modules: todo
-  config-flow-test-coverage: todo
-  config-flow: done
-  dependency-transparency: todo
-  docs-actions: todo
-  docs-high-level-description: todo
-  docs-installation-instructions: todo
-  docs-removal-instructions: todo
-  entity-event-setup: todo
-  entity-unique-id: done
-  has-entity-name: done
-  runtime-data: todo
-  test-before-configure: todo
-  test-before-setup: todo
-  unique-config-entry: todo
+- docs-actions: This integration does not expose any user-triggerable actions; all actions are handled internally based on configuration options.
+
+  - docs-high-level-description: done
+
+  - docs-installation-instructions:
+  todo
+
+  - docs-removal-instructions:
+  todo
+
+  - entity-event-setup: n/a (The integration does gather information from recorder statistics and from other sensor data, but it does not listen for events.)
+
+  - entity-unique-id: done
+
+  - has-entity-name: done
+
+  - runtime-data:
+  todo
+
+  - test-before-configure:
+  todo
+
+  - test-before-setup:
+  todo
+
+  - unique-config-entry:
+  todo
+
 
   # Silver
   action-exceptions: todo

@@ -21,7 +21,6 @@ from .coordinator import GridBoostUpdateCoordinator
 from .entity import (
     ApexChartEntity,
     BatteryLifeEntity,
-    BoostEntity,
     LoadEntity,
     PVEntity_today,
     PVEntity_tomorrow,
@@ -100,18 +99,12 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
     ),
 }
 
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up individual sensors.
-
-    Since the plant_id will never change even if we recreate the coordinator,
-    we can use it as the stable element to build sensor keys.
-    The plant_id is defined before sensors are created.
-    """
+    """Set up individual sensors."""
 
     # coordinator = hass.data[DOMAIN].get(entry.entry_id)
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
@@ -120,21 +113,13 @@ async def async_setup_entry(
         logger.error("Coordinator is missing from hass.data")
         return
 
-    # NOTE: I was trying to set up a parent entity for all the sensors, but it was not working.
-    # Since the plant_id is stable, we can use it as the unique identifier unique_prefix for all sensors.
-    plant_id = "my_plant"
-    if plant_id is None:
-        logger.error("This never happens: Plant ID is missing from coordinator data.")
-        return
-    unique_prefix = f"{plant_id}_grist"
-    parent = f"{unique_prefix}_grist"
+    unique_prefix = entry.entry_id
 
-    # Add special entity sensors: Scheduler, Battery, Cloud, Plant, Inverter, Shading and Load (from entity.py)
+    # Add special entity sensors: Scheduler, Battery, Cloud, Plant, PV Ratio and Load (from entity.py)
     entity_list = [
         SchedulerEntity,
         ApexChartEntity,
         BatteryLifeEntity,
-        BoostEntity,
         LoadEntity,
         PVEntity_today,
         PVEntity_tomorrow,
@@ -151,13 +136,11 @@ async def async_setup_entry(
         OhSnytSensor(
             entry_id=unique_prefix,
             coordinator=coordinator,
-            parent=parent,
             description=entity_description,
         )
         for entity_description in GRID_BOOST_SENSOR_ENTITIES.values()
     ]
     async_add_entities(sensors)
-
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload sensor platform for Grid Boost."""
@@ -174,7 +157,6 @@ class OhSnytSensor(CoordinatorEntity[GridBoostUpdateCoordinator], SensorEntity):
         self,
         *,
         entry_id: str,
-        parent: str,
         coordinator: GridBoostUpdateCoordinator,
         description: OhSnytSensorEntityDescription,
     ) -> None:
@@ -198,14 +180,6 @@ class OhSnytSensor(CoordinatorEntity[GridBoostUpdateCoordinator], SensorEntity):
         self.entity_id = generate_entity_id(
             "sensor.{}", self._attr_unique_id, hass=coordinator.hass
         )
-        # logger.debug(
-        #     "\n++Created sensor: %s. Native value is: %s %s. (entity_id: %s, _attr_unique_id: %s)",
-        #     self._attr_name,
-        #     self.native_value,
-        #     self._attr_native_unit_of_measurement,
-        #     self.entity_id,
-        #     self._attr_unique_id,
-        # )
 
     @property
     def name(self) -> str | None:
