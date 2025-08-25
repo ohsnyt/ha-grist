@@ -35,9 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             boost_mode=entry.options.get(
                 "boost_mode", entry.data.get("boost_mode", DEFAULT_GRIST_MODE)
             ),
-            grist_manual=entry.options.get(
-                "grist_manual", DEFAULT_GRIST_STARTING_SOC
-            ),
+            grist_manual=entry.options.get("grist_manual", DEFAULT_GRIST_STARTING_SOC),
             grist_start=entry.options.get("grist_start", DEFAULT_GRIST_START),
             update_hour=entry.options.get("update_hour", DEFAULT_UPDATE_HOUR),
             minimum_soc=entry.options.get("minimum_soc", DEFAULT_BATTERY_MIN_SOC),
@@ -84,5 +82,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Unloading Grid Boost entry: %s", entry.entry_id)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        if not hass.data[DOMAIN]:
+            hass.data.pop(DOMAIN)
     return unload_ok

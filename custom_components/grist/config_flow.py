@@ -122,3 +122,22 @@ class GridBoostOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=get_options_schema(dict(self.config_entry.options)),
         )
+
+
+class GristConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Grist."""
+
+    async def async_step_user(self, user_input=None) -> config_entries.ConfigFlowResult:
+        """Handle the initial step of the config flow."""
+        await self.async_set_unique_id(DOMAIN_STR)
+        self._abort_if_unique_id_configured()
+
+        if user_input is not None:
+            # Create the config entry with the user input
+            return self.async_create_entry(title=DOMAIN_STR, data=user_input)
+
+        # Show the form for the user to input configuration
+        return self.async_show_form(
+            step_id="user",
+            data_schema=get_options_schema({}),
+        )

@@ -144,7 +144,7 @@ async def async_setup_entry(
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload sensor platform for Grid Boost."""
-    logger.info("Unloading Grid Boost sensors for entry: %s", entry.entry_id)
+    logger.debug("Unloading Grid Boost sensors for entry: %s", entry.entry_id)
     return True
 
 
