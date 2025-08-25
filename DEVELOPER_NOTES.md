@@ -7,6 +7,7 @@ The **Grid Boost Scheduler** custom component helps Home Assistant users minimiz
 ## Quality Scale Rules
 
 ## Bronze
+
 - **action-setup**:
  This integration does not expose any user-triggerable actions; all actions are handled internally based on configuration options.
 
@@ -42,8 +43,8 @@ The **Grid Boost Scheduler** custom component helps Home Assistant users minimiz
 
 - **unique-config-entry**: This entity is a singe-instance integration and follows the idiomatic and correct method to ensure that. Testing is incorporated. **But I am still waiting to figure out how to run pytest for home assistant within docker.**
 
+## Silver
 
- # Silver
 - **action-exceptions**: n/a. No exposed actions.
 - **config-entry-unloading**: Unloading is done. Since there are no listeners, no further checks are needed. Testing is incorporated. **But I am still waiting to figure out how to run pytest for home assistant within docker.**
 - **docs-configuration-parameters**: *todo*
@@ -102,7 +103,8 @@ How:
 Add or expand tests to cover all the above scenarios.
 Use pytest coverage tools to measure and report coverage.
 
- # Gold
+## Gold
+
 - **devices**: *todo*
 - **diagnostics**: *todo*
 - **discovery-update-info**: *todo*
@@ -125,7 +127,8 @@ Use pytest coverage tools to measure and report coverage.
 - **repair-issues**: *todo*
 - **stale-devices**: *todo*
 
- # Platinum
+## Platinum
+
 - **async-dependency**: *todo*
 - **inject-websession**: *todo*
 - **strict-typing**: *todo*
