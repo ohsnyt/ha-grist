@@ -1,26 +1,44 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Grid Boost Setup",
-        "description": "Configure your Grid Boost integration.",
+      "init": {
+        "title": "Grid Boost Options",
+        "description": "Adjust your Grid Boost integration settings.",
         "data": {
-          "boost_mode": "Boost Mode",
-          "grist_manual": "Manual Grid Boost (%)",
+          "boost_mode": "Boost Mode"
+        },
+        "data_description": {
+          "boost_mode": "Select the boost mode for your system."
+        }
+      },
+      "confirm": {
+        "title": "Confirm Disable Time of Use",
+        "description": "Setting boost_mode to 'off' will disable the inverter's Time of Use system. Please confirm.",
+        "data": {
+          "confirm": "Confirm disabling Time of Use system"
+        },
+        "data_description": {
+          "confirm": "Check this box to confirm disabling the inverter's Time of Use system."
+        }
+      },
+      "details": {
+        "title": "Grid Boost Details",
+        "description": "Set advanced options for Grid Boost.",
+        "data": {
           "grist_start": "Grid Boost Start Hour",
           "grist_end": "Grid Boost End Hour",
           "update_hour": "Update Hour",
           "history_days": "History Days",
-          "minimum_soc": "Minimum Battery SoC (%)"
+          "minimum_soc": "Minimum Battery SoC (%)",
+          "grist_manual": "Manual Grid Boost (%)"
         },
         "data_description": {
-          "boost_mode": "Select the boost mode for your system.",
-          "grist_manual": "Set the manual grid boost value as a percentage.",
           "grist_start": "Hour to start grid boost (0-23).",
           "grist_end": "Hour to end grid boost (0-23).",
           "update_hour": "Hour of day to update grid boost schedule.",
           "history_days": "Number of days to use for load average.",
-          "minimum_soc": "Minimum battery state of charge as a percentage."
+          "minimum_soc": "Minimum battery state of charge as a percentage.",
+          "grist_manual": "Set the manual grid boost value as a percentage."
         }
       }
     }
@@ -31,22 +49,40 @@
         "title": "Grid Boost Options",
         "description": "Adjust your Grid Boost integration settings.",
         "data": {
-          "boost_mode": "Boost Mode",
-          "grist_manual": "Manual Grid Boost (%)",
+          "boost_mode": "Boost Mode"
+        },
+        "data_description": {
+          "boost_mode": "Select the boost mode for your system."
+        }
+      },
+      "confirm": {
+        "title": "Confirm Disable Time of Use",
+        "description": "Setting boost_mode to 'off' will disable the inverter's Time of Use system. Please confirm.",
+        "data": {
+          "confirm": "Confirm disabling Time of Use system"
+        },
+        "data_description": {
+          "confirm": "Check this box to confirm disabling the inverter's Time of Use system."
+        }
+      },
+      "details": {
+        "title": "Grid Boost Details",
+        "description": "Set advanced options for Grid Boost.",
+        "data": {
           "grist_start": "Grid Boost Start Hour",
           "grist_end": "Grid Boost End Hour",
           "update_hour": "Update Hour",
           "history_days": "History Days",
-          "minimum_soc": "Minimum Battery SoC (%)"
+          "minimum_soc": "Minimum Battery SoC (%)",
+          "grist_manual": "Manual Grid Boost (%)"
         },
         "data_description": {
-          "boost_mode": "Select the boost mode for your system.",
-          "grist_manual": "Set the manual grid boost value as a percentage.",
           "grist_start": "Hour to start grid boost (0-23).",
           "grist_end": "Hour to end grid boost (0-23).",
           "update_hour": "Hour of day to update grid boost schedule.",
           "history_days": "Number of days to use for load average.",
-          "minimum_soc": "Minimum battery state of charge as a percentage."
+          "minimum_soc": "Minimum battery state of charge as a percentage.",
+          "grist_manual": "Set the manual grid boost value as a percentage."
         }
       }
     }

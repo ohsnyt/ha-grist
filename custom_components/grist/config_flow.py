@@ -27,23 +27,31 @@ from .const import (
     HISTORY_MIN,
     HOUR_MAX,
     HOUR_MIN,
+    BoostMode,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-def get_options_schema(options: dict[str, Any]) -> vol.Schema:
+def boost_schema(options: dict[str, Any]) -> vol.Schema:
     """Return the options schema for Grist."""
     return vol.Schema({
         vol.Required(
             "boost_mode", default=str(options.get("boost_mode", DEFAULT_GRIST_MODE))
         ): vol.In(BOOST_MODE_OPTIONS),
-        vol.Required(
-            "grist_manual",
-            default=options.get("grist_manual", DEFAULT_MANUAL_GRIST),
-        ): vol.All(
-            vol.Coerce(int),
-            vol.Range(min=GRIST_MIN_SOC, max=GRIST_MAX_SOC),
-        ),
+    })
+
+def confirm_schema(options: dict[str, Any]) -> vol.Schema:
+    """Return a schema requiring explicit user confirmation to disable boost mode.
+
+    The 'confirm' field is a safety confirmation for disabling boost mode, with a default of False.
+    """
+    return vol.Schema({
+        vol.Required("confirm", default=False): bool
+    })
+
+def details_schema(options: dict[str, Any]) -> vol.Schema:
+    """Return the options schema for Grist."""
+    return vol.Schema({
         vol.Required("grist_start", default=DEFAULT_GRIST_START): vol.All(
             vol.Coerce(int), vol.Range(min=HOUR_MIN, max=HOUR_MAX)
         ),
@@ -65,14 +73,21 @@ def get_options_schema(options: dict[str, Any]) -> vol.Schema:
             vol.Coerce(int),
             vol.Range(min=GRIST_MIN_SOC, max=GRIST_MAX_SOC),
         ),
-    })
+        vol.Required(
+            "grist_manual",
+            default=options.get("grist_manual", DEFAULT_MANUAL_GRIST),
+        ): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=GRIST_MIN_SOC, max=GRIST_MAX_SOC),
+        ),
+})
+
 
 class GristConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Grist."""
 
     VERSION = 1
     STEP_USER = "user"
-
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -82,9 +97,8 @@ class GristConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_create_entry(title=DOMAIN_STR, data=user_input)
         return self.async_show_form(
             step_id=self.STEP_USER,
-            data_schema=get_options_schema({}),
+            data_schema=boost_schema({}),
         )
-
 
     @staticmethod
     @callback
@@ -97,13 +111,53 @@ class GristConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class GristOptionsFlow(config_entries.OptionsFlow):
     """Handle the options flow for Grid Boost."""
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Handle the options flow."""
-        if user_input is not None:
-            return self.async_create_entry(title=DOMAIN_STR, data=user_input)
-        return self.async_show_form(
-            step_id="init",
-            data_schema=get_options_schema(dict(self.config_entry.options)),
-        )
+    def __init__(self) -> None:
+        """Initialize temporary user input during optional confirmation process."""
+        self._pending_user_mode = {}
+
+    @property
+    def options(self) -> dict[str, Any]:
+        """Return the current options from the config entry."""
+        if hasattr(self, "config_entry") and self.config_entry is not None:
+            return dict(self.config_entry.options)
+        return {}
+
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+        """Start the options flow by asking for the boost mode."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="init",
+                data_schema=boost_schema(dict(self.options))
+            )
+
+        self._pending_user_mode = user_input
+        if user_input.get("boost_mode") == BoostMode.OFF and not user_input.get("confirm"):
+            return await self.async_step_confirm(None)
+        return await self.async_step_details()
+
+    async def async_step_confirm(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+        """Handle the confirmation of turning off the boost mode."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="confirm",
+                data_schema=confirm_schema(dict(self._pending_user_mode)),
+            )
+        # If the user confirms, go to the next step. If not, restart the process. (This is recursive, but is
+        #   very unlikely to go deep.)
+        if user_input.get("confirm"):
+            return await self.async_step_details(None)
+        return await self.async_step_init(None)
+
+    async def async_step_details(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+        """Handle the details step."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="details",
+                data_schema=details_schema(dict(self.options)),
+            )
+        options = dict(self.options)
+        if self._pending_user_mode:
+            options.update(self._pending_user_mode)
+        options.update(user_input)
+        return self.async_create_entry(title=DOMAIN, data=options)
