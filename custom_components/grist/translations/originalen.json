@@ -1,0 +1,74 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Update Grist Options",
+        "description": "Update the configuration options for Grist.",
+        "data": {
+          "boost_mode": "Boost Mode",
+          "grist_manual": "Manual Grid Boost (%)",
+          "grist_start": "Grid Boost Start Time",
+          "grist_end": "Grid Boost End Time",
+          "update_hour": "Update Hour",
+          "history_days": "Days of Load History",
+          "minimum_soc": "Minimum State of Charge (%)"
+        },
+        "data_description": {
+          "boost_mode": "Select the boost mode.",
+          "grist_manual": "Set the manual grid boost value as a percentage (5-99%, suggest 50).",
+          "grist_start": "Set the time to start grid boost (suggest 0).",
+          "grist_end": "Set the time to end grid boost (suggest 6).",
+          "update_hour": "Set the hour of the day to perform updates (0-23, suggest 22).",
+          "history_days": "Number of days of load history to use for calculations (1-10 days, suggest 4).",
+          "minimum_soc": "Set the minimum state of charge (SOC) value as a percentage (5-99%, suggest 15)."
+        }
+      },
+      "confirm_off": {
+        "title": "Confirm Disable Time of Use",
+        "description": "Setting boost_mode to 'off' will disable the inverter's Time of Use system. Please confirm.",
+        "data": {
+          "confirm_off": "Confirm disabling Time of Use system"
+        },
+        "data_description": {
+          "confirm_off": "Check this box to confirm disabling the inverter's Time of Use system."
+        }
+      }
+    },
+    "options": {
+      "step": {
+        "init": {
+          "title": "Update Grist Options",
+          "description": "Update the configuration options for Grist.",
+          "data": {
+            "boost_mode": "Boost Mode",
+            "grist_manual": "Manual Grid Boost (%)",
+            "grist_start": "Grid Boost Start Time",
+            "grist_end": "Grid Boost End Time",
+            "update_hour": "Update Hour",
+            "history_days": "Days of Load History",
+            "minimum_soc": "Minimum State of Charge (%)"
+          },
+          "data_description": {
+            "boost_mode": "Select the boost mode.",
+            "grist_manual": "Set the manual grid boost value as a percentage (5-99%, suggest 50).",
+            "grist_start": "Set the time to start grid boost (suggest 0).",
+            "grist_end": "Set the time to end grid boost (suggest 6).",
+            "update_hour": "Set the hour of the day to perform updates (0-23, suggest 22).",
+            "history_days": "Number of days of load history to use for calculations (1-10 days, suggest 4).",
+            "minimum_soc": "Set the minimum state of charge (SOC) value as a percentage (5-99%, suggest 15)."
+          }
+        },
+        "confirm_off": {
+          "title": "Confirm Disable Time of Use",
+          "description": "Setting boost_mode to 'off' will disable the inverter's Time of Use system. Please confirm.",
+          "data": {
+            "confirm_off": "Confirm disabling Time of Use system"
+          },
+          "data_description": {
+            "confirm_off": "Check this box to confirm disabling the inverter's Time of Use system."
+          }
+        }
+      }
+    }
+  }
+}

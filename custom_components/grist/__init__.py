@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 # from homeassistant.helpers.typing import ConfigType
 from .const import (
     DEFAULT_BATTERY_MIN_SOC,
+    DEFAULT_GRIST_END,
     DEFAULT_GRIST_MODE,
     DEFAULT_GRIST_START,
     DEFAULT_GRIST_STARTING_SOC,
@@ -32,23 +33,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass=hass,
             config_entry=entry,
             coordinator=None,  # Temporarily set to None
-            boost_mode=entry.options.get(
-                "boost_mode", entry.data.get("boost_mode", DEFAULT_GRIST_MODE)
-            ),
+            boost_mode=entry.options.get("boost_mode", DEFAULT_GRIST_MODE),
             grist_manual=entry.options.get("grist_manual", DEFAULT_GRIST_STARTING_SOC),
             grist_start=entry.options.get("grist_start", DEFAULT_GRIST_START),
+            grist_end=entry.options.get("grist_end", DEFAULT_GRIST_END),
             update_hour=entry.options.get("update_hour", DEFAULT_UPDATE_HOUR),
             minimum_soc=entry.options.get("minimum_soc", DEFAULT_BATTERY_MIN_SOC),
             history_days=entry.options.get("history_days", DEFAULT_LOAD_AVERAGE_DAYS),
         )
         _LOGGER.debug(
-            "Grid Boost options at startup:\nBoost: %s,\nManual: %s%%,\nStart: %s,\nUpdate Hour: %s,\nMinimum SoC: %s%%,\nHistory Days: %s",
+            "\nGrid Boost options at startup:\nBoost: %s, with %s load history days\nStart - End: %s - %s,\nUpdate Hour: %s,\nMinimum SoC: %s%%, Manual SoC: %s%%",
             grist.boost_mode.capitalize(),
-            grist.grist_manual,
+            grist.days_of_load_history,
             grist.grist_start,
+            grist.grist_end,
             grist.update_hour,
             grist.minimum_soc,
-            grist.days_of_load_history,
+            grist.grist_manual,
         )
 
         # Create the UpdateCoordinator

@@ -8,5 +8,6 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ohsnyt/ha-grid-boost/issues",
   "requirements": [],
+  "translations": ["en"],
   "version": "1.0.0"
 }

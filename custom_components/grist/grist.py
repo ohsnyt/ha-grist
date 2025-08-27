@@ -19,6 +19,7 @@ from .boost_calc import calculate_required_boost
 from .const import (
     DEBUGGING,
     DEFAULT_BATTERY_MIN_SOC,
+    DEFAULT_GRIST_END,
     DEFAULT_GRIST_MODE,
     DEFAULT_GRIST_START,
     DEFAULT_GRIST_STARTING_SOC,
@@ -75,7 +76,8 @@ class GridBoostScheduler:
         coordinator: GridBoostUpdateCoordinator | None,
         boost_mode: str = DEFAULT_GRIST_MODE,
         grist_manual: int = DEFAULT_GRIST_STARTING_SOC,
-        grist_start: str = DEFAULT_GRIST_START,
+        grist_start: int = DEFAULT_GRIST_START,
+        grist_end: int = DEFAULT_GRIST_END,
         update_hour: int = DEFAULT_UPDATE_HOUR,
         minimum_soc: int = DEFAULT_BATTERY_MIN_SOC,
         history_days: int = DEFAULT_LOAD_AVERAGE_DAYS,
@@ -88,7 +90,8 @@ class GridBoostScheduler:
             coordinator: The update coordinator, if available.
             boost_mode: The current boost mode (e.g., auto, manual, off).
             grist_manual: The manually set SOC for grid boost.
-            grist_start: The time to start grid boost (as a string, e.g., "00:30").
+            grist_start: The time to start grid boost (as a string, e.g., "00:00").
+            grist_end: The time to end grid boost (as a string, e.g., "06:00").
             update_hour: The hour of the day to perform updates.
             minimum_soc: The minimum allowed battery state of charge.
             history_days: The number of days to use for load average calculations.
@@ -100,6 +103,7 @@ class GridBoostScheduler:
         self.boost_mode = boost_mode
         self.grist_manual = grist_manual
         self.grist_start = grist_start
+        self.grist_end = grist_end
         self.update_hour = update_hour
         self.minimum_soc = minimum_soc
         self.days_of_load_history: int = history_days

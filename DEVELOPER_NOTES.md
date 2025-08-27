@@ -83,7 +83,6 @@ In your entity code, log when available changes to False.
 Add a test that simulates this and checks for the log message.
 
 - **parallel-updates**: *todo*
-- 8. parallel-updates
 What:
 If your integration updates multiple entities, use parallel updates to avoid blocking.
 
