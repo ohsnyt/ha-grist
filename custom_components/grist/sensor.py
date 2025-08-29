@@ -41,8 +41,8 @@ class OhSnytSensorEntityDescription(SensorEntityDescription):
 
 GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
     # Forecasted PV power related sensors.
-    "pv_calculated_today_total": OhSnytSensorEntityDescription(
-        key="pv_calculated_today_total",
+    "pv_today_total": OhSnytSensorEntityDescription(
+        key="pv_today_total",
         icon="mdi:flash",
         name="Estimated PV power for today",
         native_unit_of_measurement=UnitOfPower.KILO_WATT,
@@ -50,8 +50,8 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
     ),
-    "pv_calculated_tomorrow_total": OhSnytSensorEntityDescription(
-        key="pv_calculated_tomorrow_total",
+    "pv_tomorrow_total": OhSnytSensorEntityDescription(
+        key="pv_tomorrow_total",
         icon="mdi:flash",
         name="Estimated PV power for tomorrow",
         native_unit_of_measurement=UnitOfPower.KILO_WATT,
@@ -60,8 +60,8 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         suggested_display_precision=1,
     ),
     # Grid boost related sensors.
-    "grist_calculated": OhSnytSensorEntityDescription(
-        key="grist_calculated",
+    "calculated_boost": OhSnytSensorEntityDescription(
+        key="calculated_boost",
         icon="mdi:battery",
         name="Calculated Grid Boost SoC",
         native_unit_of_measurement="%",
@@ -69,17 +69,17 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
     ),
-    "grist_actual": OhSnytSensorEntityDescription(
-        key="grist_actual",
+    "current_boost_setting": OhSnytSensorEntityDescription(
+        key="current_boost_setting",
         icon="mdi:battery",
-        name="Actual Grid Boost SoC",
+        name="Current inverter Grid Boost setting",
         native_unit_of_measurement="%",
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
     ),
-    "grist_manual": OhSnytSensorEntityDescription(
-        key="grist_manual",
+    "manual_boost": OhSnytSensorEntityDescription(
+        key="manual_boost",
         icon="mdi:battery",
         name="Manual Grid Boost SoC",
         native_unit_of_measurement="%",
@@ -163,7 +163,8 @@ class OhSnytSensor(CoordinatorEntity[GristUpdateCoordinator], SensorEntity):
         super().__init__(coordinator)
         self.entity_description = description
         self._key = description.key
-        self._attr_unique_id = f"{entry_id}_{description.key}"
+        self._attr_unique_id = f"{DOMAIN}_{description.key}"
+        self.entity_id = generate_entity_id("sensor.{}", self._attr_unique_id, hass=coordinator.hass)
         icon = description.icon if isinstance(description.icon, str) else "mdi:flash"
         self._attr_icon = icon
         name = description.name if isinstance(description.name, str) else "Unknown"
@@ -174,11 +175,7 @@ class OhSnytSensor(CoordinatorEntity[GristUpdateCoordinator], SensorEntity):
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry_id)},
             "name": self._attr_name,
-            # via_device=(DOMAIN, parent) if parent else ("", ""),
         }
-        self.entity_id = generate_entity_id(
-            "sensor.{}", self._attr_unique_id, hass=coordinator.hass
-        )
 
     @property
     def name(self) -> str | None:
