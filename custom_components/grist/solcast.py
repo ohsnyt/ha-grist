@@ -200,12 +200,12 @@ class Solcast:
             if (parsed_date := dt_util.parse_date(date)) is not None and parsed_date >= cutoff
         }
 
-    async def async_unload(self) -> None:
+    async def async_unload_entry(self) -> None:
         """Clean up resources."""
         if self._unsub_update:
             self._unsub_update()
             self._unsub_update = None
-        logger.debug("Unscheduled periodic updates")
+        logger.debug("Unloaded Solcast")
 
     def forecast_for_date(self, date: str) -> dict[int, int]:
         """Return the forecast for a specific date."""

@@ -96,7 +96,8 @@ class ForecastSolar:
         logger.info(
             "\n{%s}Retrieved Forecast.Solar forecast data for %d days%s",
             PURPLE,
-            len(self._forecast),RESET
+            len(self._forecast),
+            RESET,
         )
         for date, day_data in self._forecast.items():
             logger.debug(
@@ -340,12 +341,12 @@ class ForecastSolar:
             and parsed_date >= cutoff
         }
 
-    async def async_unload(self) -> None:
+    async def async_unload_entry(self) -> None:
         """Clean up resources."""
         if self._unsub_update:
             self._unsub_update()
             self._unsub_update = None
-        logger.debug("Unscheduled periodic updates")
+        logger.debug("Unloaded Forecast_Solar")
 
     def forecast_for_date(self, date: str) -> dict[int, int]:
         """Return the forecast for a specific date."""

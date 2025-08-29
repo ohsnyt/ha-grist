@@ -1,15 +1,16 @@
-"""The Solcast Solar integration."""
+"""For the GRIST Scheduler integration."""
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 import logging
 
-# from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import Any
 
-from .const import DEBUGGING, DOMAIN, UPDATE_INTERVAL
+from .const import DEBUGGING, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 if DEBUGGING:
@@ -18,25 +19,24 @@ else:
     _LOGGER.setLevel(logging.INFO)
 
 
-class GridBoostUpdateCoordinator(DataUpdateCoordinator):
+class GristUpdateCoordinator(DataUpdateCoordinator):
     """Get the current data to update the sensors."""
 
     def __init__(
         self,
-        *,
         hass: HomeAssistant,
-        update_method,
+        update_interval: int,
+        update_method: Callable[[], Awaitable[dict[str, Any]]],
     ) -> None:
-        """Initialize the GridBoostUpdateCoordinator."""
-        _LOGGER.debug("Initializing GridBoostUpdateCoordinator")
+        """Initialize the GristUpdateCoordinator."""
+        _LOGGER.debug("Initializing GristUpdateCoordinator to update via %s every %s seconds", update_method, update_interval)
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_method=update_method,
-            update_interval=timedelta(seconds=UPDATE_INTERVAL),
+            update_interval=timedelta(seconds=update_interval),
         )
-        _LOGGER.debug("GridBoostUpdateCoordinator initialized")
+        self.update_method = update_method
 
     async def _async_update_data(self):
         """Fetch all data for your sensors here."""
@@ -47,3 +47,8 @@ class GridBoostUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Update method failed to update sensors: %s", e)
                 raise UpdateFailed(f"UpdateMethod Failed to update sensors: {e}") from e
         return None
+
+    async def async_unload_entry(self) -> None:
+        """Unload the config entry."""
+        _LOGGER.debug("Unloading entry: %s", self.name)
+        self.update_method = None

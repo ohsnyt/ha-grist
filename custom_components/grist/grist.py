@@ -5,11 +5,14 @@ Handles Time-of-Use battery and grid boost management, including scheduling, sto
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import logging
-from typing import Any
+import traceback
+from typing import Any, Self
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.util import dt as dt_util
@@ -29,13 +32,13 @@ from .const import (
     NUMBER_CAPACITY_POINT_1,
     PURPLE,
     RESET,
+    SWITCH_TOU_STATE,
     BoostMode,
     Status,
 )
-from .coordinator import GridBoostUpdateCoordinator
 from .daily_calcs import DailyStats
 from .forecast_solar import ForecastSolar
-from .hass_utilities import get_state, set_number
+from .hass_utilities import get_state, get_switch, set_number, set_switch
 from .meteo import Meteo
 from .solcast import Solcast
 
@@ -62,8 +65,21 @@ def ordinal(n: int) -> str:
             return f"{n}th"
 
 
-class GridBoostScheduler:
-    """Scheduler for Grid Boost battery and grid boost management.
+def to_hour(hour: int) -> str:
+    """Convert an integer hour (0-23) to a string representation."""
+    if hour == 0:
+        return "midnight"
+    if 1 <= hour < 12:
+        return f"{hour}am"
+    if hour == 12:
+        return "noon"
+    if 13 <= hour < 24:
+        return f"{hour - 12}pm"
+    raise ValueError("Invalid hour")
+
+
+class GristScheduler:
+    """GRIST Scheduler for battery and grid boost management.
 
     Handles loading and saving of boost settings, calculation of required battery boost,
     and provides methods for updating and retrieving scheduling data.
@@ -72,21 +88,13 @@ class GridBoostScheduler:
     def __init__(
         self,
         hass: HomeAssistant,
-        config_entry: ConfigEntry,
-        coordinator: GridBoostUpdateCoordinator | None,
-        boost_mode: str = DEFAULT_GRIST_MODE,
-        grist_manual: int = DEFAULT_GRIST_STARTING_SOC,
-        grist_start: int = DEFAULT_GRIST_START,
-        grist_end: int = DEFAULT_GRIST_END,
-        update_hour: int = DEFAULT_UPDATE_HOUR,
-        minimum_soc: int = DEFAULT_BATTERY_MIN_SOC,
-        history_days: int = DEFAULT_LOAD_AVERAGE_DAYS,
+        options: dict[str, Any],
     ) -> None:
-        """Initialize the GridBoostScheduler with Home Assistant context and configuration.
+        """Initialize the GristScheduler with Home Assistant context and configuration.
 
         Args:
             hass: The Home Assistant instance.
-            config_entry: The configuration entry for this integration.
+            options: The configuration options for this integration.
             coordinator: The update coordinator, if available.
             boost_mode: The current boost mode (e.g., auto, manual, off).
             grist_manual: The manually set SOC for grid boost.
@@ -98,15 +106,15 @@ class GridBoostScheduler:
 
         """
         self.hass = hass
-        self.config_entry = config_entry
-        self.coordinator = coordinator
-        self.boost_mode = boost_mode
-        self.grist_manual = grist_manual
-        self.grist_start = grist_start
-        self.grist_end = grist_end
-        self.update_hour = update_hour
-        self.minimum_soc = minimum_soc
-        self.days_of_load_history: int = history_days
+        self.boost_mode = options.get("boost_mode", DEFAULT_GRIST_MODE)
+        self.grist_manual = options.get("grist_manual", DEFAULT_GRIST_STARTING_SOC)
+        self.grist_start = options.get("grist_start", DEFAULT_GRIST_START)
+        self.grist_end = options.get("grist_end", DEFAULT_GRIST_END)
+        self.update_hour = options.get("update_hour", DEFAULT_UPDATE_HOUR)
+        self.minimum_soc = options.get("minimum_soc", DEFAULT_BATTERY_MIN_SOC)
+        self.days_of_load_history = options.get(
+            "history_days", DEFAULT_LOAD_AVERAGE_DAYS
+        )
 
         # Reserve space for the forecaster, battery and calculation objects
         self.forecaster = None
@@ -122,30 +130,85 @@ class GridBoostScheduler:
         self.grist_calculated: int = DEFAULT_GRIST_STARTING_SOC
         self.pv_adjusted_estimates_history: dict[str, dict[int, int]] = {}
 
+    async def async_setup(self) -> None:
+        """Set up the GRIST Scheduler."""
+        logger.debug("Setting up GRIST Scheduler. First, select a forecaster.")
+        self.status = Status.STARTING
+
+        if not self.hass.is_running:
+            logger.debug(
+                "Home Assistant not running, deferring forecaster selection until started"
+            )
+            self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, self._async_on_hass_started
+            )
+            return
+        # Hass is running, so continue now
+        await self._post_hass_started_setup()
+
+    async def _async_on_hass_started(self, event):
+        """Handle Home Assistant started event."""
+
+        logger.debug("Home Assistant started event received, continuing setup")
+        await self._post_hass_started_setup()
+
+    async def _post_hass_started_setup(self):
+        """Continue setup after Home Assistant is running."""
+        await self._select_forecaster()
+        if not self.forecaster:
+            logger.error("No forecaster available, cannot proceed with setup")
+            raise ConfigEntryError(
+                "No forecaster available. Checked integrations: solcast_solar, forecast_solar, open_meteo. "
+                "Please ensure at least one of these integrations is installed, configured, and running."
+            )
+
+        self.battery = Battery(self.hass)
+        await self.battery.async_initialize()
+
+        self.daily = DailyStats(self.hass, self.days_of_load_history)
+        await self.daily.async_initialize(self.forecaster)
+
+        self.status = Status.NORMAL
+
+        msg = (
+            f"{PURPLE}\n-------------------GRIST initialized successfully with the following settings-------------------"
+            f"\n   Boost_mode: {self.boost_mode} - Manual SoC: {self.grist_manual}%% - Minimum SoC: {self.minimum_soc}%%"
+            f"\n   Boost from: {to_hour(self.grist_start)} - {to_hour(self.grist_end)}, fetching forecast at: {to_hour(self.update_hour)} using {self.days_of_load_history} days of load history"
+            f"\n-------------------------------------------------------------------------------------------------{RESET}"
+        )
+        logger.debug(msg)
+
     async def _select_forecaster(self) -> bool:
         """Select the forecaster based on which one is in NORMAL status."""
-        logger.debug("Setting up Grid Boost")
-        self.status = Status.NOT_CONFIGURED
         # Get all config entries for the Forecast.solar domain
         integration_list = ["solcast_solar", "forecast_solar", "open_meteo"]
         # Check if any entry is in the LOADED state
         integration = await self._is_integration_running(integration_list)
+
         if integration:
-            logger.info("\n%sSelected forecaster: %s%s", PURPLE, integration, RESET)
+            logger.info("%sSelected forecaster: %s%s", PURPLE, integration, RESET)
             if integration == "solcast_solar":
                 self.forecaster = Solcast(self.hass)
-                logger.info("Solcast")
             elif integration == "forecast_solar":
                 self.forecaster = ForecastSolar(self.hass)
-                logger.info("Forecast Solar")
                 # Could also add a percentile if needed
             elif integration == "open_meteo":
                 self.forecaster = Meteo(self.hass)
-                logger.info("Open Meteo Solar Forecast")
             if self.forecaster is not None:
                 await self.forecaster.async_initialize()
             return True
+        logger.info("%s\nNo forecast integration found%s", PURPLE, RESET)
         return False
+
+    async def async_unload_entry(self) -> None:
+        """Unload all sub-objects."""
+        logger.debug("Unloading Grid Boost sub-objects")
+        if self.battery:
+            await self.battery.async_unload_entry()
+        if self.forecaster:
+            await self.forecaster.async_unload_entry()
+        if self.daily:
+            await self.daily.async_unload_entry()
 
     async def _is_integration_running(self, integration_list: list) -> str | None:
         """Check if any (forecaster) integration in the provided list is currently running (i.e., in the LOADED state).
@@ -175,11 +238,13 @@ class GridBoostScheduler:
         return None
 
     async def _daily_tasks(self) -> None:
-        """Update forecaster, daily and battery data at the start of each day."""
+        """Update forecaster, daily and battery data as needed."""
+        if self._daily_task_next_start > dt_util.now():
+            return
 
         if self.forecaster and self.daily and self.battery:
             await self.forecaster.update_data()
-            await self.daily.update_data()
+            await self.daily.update_data(self.forecaster)
             await self.battery.update_data()
             self.status = Status.NORMAL
         else:
@@ -204,15 +269,29 @@ class GridBoostScheduler:
 
     async def _refresh_boost(self) -> None:
         """Recalculate statistics once an hour."""
-
         if self._refresh_boost_next_start > dt_util.now():
             return
+
+        logger.debug(
+            "\n%s--------------------------------------------------------\nStarting grist._refresh_boost.\n--------------------------------------------------------%s",
+            # "\n%s--------------------------------------------------------\nStarting grist._refresh_boost.\nCalled from:%s\n--------------------------------------------------------%s",
+            PURPLE,
+            # "".join(traceback.format_stack()),
+            RESET,
+        )
 
         if self.daily is None or self.battery is None:
             if self.daily is None:
                 logger.warning("DailyStats not initialized, cannot refresh boost.")
             if self.battery is None:
                 logger.warning("Battery not initialized, cannot refresh boost.")
+            return
+        adjusted_pv = self.daily.forecast_tomorrow_adjusted
+            # Debugging, check adjusted_pv to see if it is all zeros
+        if not adjusted_pv or all(value == 0 for value in adjusted_pv.values()):
+            logger.warning(
+            "HEY! Adjusted PV data is empty or all zeros, skipping boost calculation"
+            )
             return
 
         boost = calculate_required_boost(
@@ -222,8 +301,47 @@ class GridBoostScheduler:
             adjusted_pv=self.daily.forecast_tomorrow_adjusted,
             average_hourly_load=self.daily.average_hourly_load,
         )
+        # If we could not yet calculate the boost, try again a bit later. Probably because we don't have forecast data yet.
+        if boost is None:
+            logger.debug("*****Boost could not be calculated yet.*****")
+            return
+
         self.grist_calculated = int(boost) if boost else int(self.grist_manual)
-        # Write the boost to the inverter if we are in automatic or manual mode
+        # Write the boost to the inverter if we are in automatic or manual mode, making sure ToU is on
+        tou = await get_switch(self.hass, entity_id=SWITCH_TOU_STATE)
+        logger.debug(
+            "\n%sHey there. ToU switch state is %s and grist boost_mode is : %s%s",
+            PURPLE,
+            tou,
+            self.boost_mode,
+            RESET,
+        )
+        if self.boost_mode in [BoostMode.AUTOMATIC, BoostMode.MANUAL, "manual"]:
+            while tou is False:
+                await set_switch(self.hass, entity_id=SWITCH_TOU_STATE, value=True)
+                await asyncio.sleep(5)
+                tou = await get_switch(self.hass, entity_id=SWITCH_TOU_STATE)
+                logger.debug(
+                    "\n%sWhile ToU is False loop: Now ToU is %s and grist boost_mode is : %s%s",
+                    PURPLE,
+                    tou,
+                    self.boost_mode,
+                    RESET,
+                )
+
+        if self.boost_mode == BoostMode.OFF:
+            while tou is True:
+                await set_switch(self.hass, entity_id=SWITCH_TOU_STATE, value=False)
+                await asyncio.sleep(5)
+                tou = await get_switch(self.hass, entity_id=SWITCH_TOU_STATE)
+                logger.debug(
+                    "\n%sWhile ToU is True loop: Now ToU is %s and grist boost_mode is : %s%s",
+                    PURPLE,
+                    tou,
+                    self.boost_mode,
+                    RESET,
+                )
+
         if self.boost_mode == BoostMode.AUTOMATIC:
             await set_number(self.hass, NUMBER_CAPACITY_POINT_1, self.grist_calculated)
         elif self.boost_mode == BoostMode.MANUAL:
@@ -328,39 +446,16 @@ class GridBoostScheduler:
         # logger.debug("Remaining battery time calculated: %d minutes", remaining_time)
         return remaining_time
 
-    async def to_dict(
-        self,
-    ) -> dict[str, Any]:
+    async def to_dict(self,) -> dict[str, Any]:
         """Return calculated data as a dictionary."""
 
-        # First, check if hass is running. If not, return starting status.
+        # First, check if hass is fully started. If not, return starting status.
         if self.hass.is_running is False:
-            logger.debug("Grid Boost is starting...")
+            logger.debug("Home Assistant is still starting...")
             return {"status": Status.STARTING}
 
-        # --- STARTUP ---
-        # Once hass is running, initialize forecaster, battery, and calculations. This happens only once.
-        if self.forecaster is None:
-            if not await self._select_forecaster():
-                logger.error("No forecaster available, cannot proceed with setup")
-                raise ConfigEntryError("No forecaster available")
-            if not self.battery:
-                self.battery = Battery(self.hass)
-                await self.battery.async_initialize()
-            if not self.daily and self.forecaster is not None:
-                self.daily = DailyStats(self.hass, self.forecaster)
-                await self.daily.async_initialize()
-                await self._refresh_boost()
-            if self.status == Status.STARTING:
-                # Set the status to NORMAL once everything is initialized
-                self.status = Status.NORMAL
-                logger.debug("Grid Boost initialized successfully")
-        # --- END STARTUP ---
-
         # Check if the daily tasks need to be run.
-        if self._daily_task_next_start <= dt_util.now():
-            logger.debug("Running daily tasks.")
-            await self._daily_tasks()
+        await self._daily_tasks()
 
         # Check if the refresh boost task needs to be run.
         await self._refresh_boost()
@@ -370,7 +465,8 @@ class GridBoostScheduler:
 
         # Initialize key data to send to sensors
         now = dt_util.now()
-        # hour = now.hour
+
+        # Make sure we have a valid live boost state from the inverter
         boost_actual_state = await get_state(self.hass, NUMBER_CAPACITY_POINT_1)
         if boost_actual_state is not None:
             try:

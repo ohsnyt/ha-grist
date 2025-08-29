@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import logging
 from typing import Any
 
@@ -113,11 +113,11 @@ async def get_state_as_float(
         try:
             # Check for unavailable/unknown and non-numeric values
             if state_value in ("unavailable", "unknown", None):
-                logger.error("Invalid number state for %s: %s", entity_id, state_value)
+                logger.error("Invalid sensor: %s", entity_id)
                 return default
             return float(state_value)
         except (ValueError, TypeError):
-            logger.error("Invalid number state for %s: %s", entity_id, state_value)
+            logger.error("Invalid sensor: %s", entity_id)
     return default
 
 
@@ -322,7 +322,7 @@ async def get_number(
         try:
             return float(state["state"])
         except ValueError:
-            logger.error("Invalid number state for %s: %s", entity_id, state["state"])
+                logger.error("MQTT down or invalid number sensor: %s", entity_id)
     return default
 
 
@@ -338,6 +338,48 @@ async def set_number(hass: HomeAssistant, entity_id: str, value: int) -> None:
     await hass.services.async_call(
         "number", "set_value", {"entity_id": entity_id, "value": value}
     )
+
+async def get_switch(hass: HomeAssistant, entity_id: str) -> bool | None:
+    """Get the value of a switch entity.
+
+    Args:
+        hass (HomeAssistant): The Home Assistant instance.
+        entity_id (str): The entity ID to retrieve.
+
+    Returns:
+        bool: The value of the state or None if not found.
+
+    """
+    state = await get_entity(hass, entity_id)
+    if state and "state" in state:
+        try:
+            if not state:
+                return None
+            if state["state"] == "off":
+                return False
+            if state["state"] == "on":
+                return True
+        except ValueError:
+            logger.error("MQTT down or invalid switch sensor: %s", entity_id)
+    return None
+
+async def set_switch(hass: HomeAssistant, entity_id: str, value: bool) -> None:
+    """Set the value of a switch entity.
+
+    Args:
+        hass (HomeAssistant): The Home Assistant instance.
+        entity_id (str): The entity ID to set.
+        value (int): The value to set.
+
+    """
+    await hass.services.async_call(
+        "switch", "turn_on" if value else "turn_off", {"entity_id": entity_id}
+    )
+    logger.debug(
+            "\n------------------------------\nSet switch %s to %s\n------------------------------",
+            entity_id,
+            value
+        )
 
 
 def start_and_end_utc(days=1) -> tuple[datetime, datetime]:

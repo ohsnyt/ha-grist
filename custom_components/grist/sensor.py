@@ -1,4 +1,4 @@
-"""Sensor platform for the Grid Boost  integration."""
+"""Sensor platform for the GRIST integration."""
 
 import logging
 
@@ -17,7 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DEBUGGING, DOMAIN
-from .coordinator import GridBoostUpdateCoordinator
+from .coordinator import GristUpdateCoordinator
 from .entity import (
     ApexChartEntity,
     BatteryLifeEntity,
@@ -106,7 +106,6 @@ async def async_setup_entry(
 ) -> None:
     """Set up individual sensors."""
 
-    # coordinator = hass.data[DOMAIN].get(entry.entry_id)
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     # Double check that we have data
     if coordinator is None:
@@ -143,12 +142,12 @@ async def async_setup_entry(
     async_add_entities(sensors)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload sensor platform for Grid Boost."""
-    logger.debug("Unloading Grid Boost sensors for entry: %s", entry.entry_id)
+    """Unload sensor platform for GRIST Scheduler."""
+    logger.debug("Unloaded GRIST sensors for entry: %s", entry.entry_id)
     return True
 
 
-class OhSnytSensor(CoordinatorEntity[GridBoostUpdateCoordinator], SensorEntity):
+class OhSnytSensor(CoordinatorEntity[GristUpdateCoordinator], SensorEntity):
     """Representation of a standard sensor."""
 
     # has_entity_name = False  # Prevent Home Assistant from generating a friendly name
@@ -157,7 +156,7 @@ class OhSnytSensor(CoordinatorEntity[GridBoostUpdateCoordinator], SensorEntity):
         self,
         *,
         entry_id: str,
-        coordinator: GridBoostUpdateCoordinator,
+        coordinator: GristUpdateCoordinator,
         description: OhSnytSensorEntityDescription,
     ) -> None:
         """Initialize the sensor."""

@@ -84,6 +84,14 @@ class Meteo:
             logger.debug("Loaded forecast data from storage: %s", forecast_dates)
         else:
             logger.debug("No forecast data found in storage, starting fresh")
+            await self.update_data()
+
+    async def async_unload_entry(self) -> None:
+        """Clean up resources."""
+        if self._unsub_update:
+            self._unsub_update()
+            self._unsub_update = None
+        logger.debug("Unloaded Meteo")
 
     async def update_data(self) -> None:
         """Update the Meteo data."""
@@ -125,12 +133,17 @@ class Meteo:
 
         attributes = result.get("attributes")
         if not attributes:
-            logger.warning("No attributes found for %s. Probably a daily total.", entity_id)
+            logger.warning(
+                "No attributes found for %s. Probably a daily total.", entity_id
+            )
             return True
 
         detailed_hourly = attributes.get("wh_period")
         if not detailed_hourly:
-            logger.warning("No forecast wh_period attribute found for %s. Probably a daily total.", entity_id)
+            logger.warning(
+                "No forecast wh_period attribute found for %s. Probably a daily total.",
+                entity_id,
+            )
             return True
 
         next_day_date, hourly_forecast = await self._parse_detailed_hourly(

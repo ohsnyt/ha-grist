@@ -8,7 +8,6 @@ Grid Boost functionality.
 
 from datetime import timedelta
 import logging
-from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -19,8 +18,6 @@ from .const import (
     DEFAULT_LOAD_ESTIMATE,
     DEFAULT_PV_MAX_DAYS,
     HRS_PER_DAY,
-    PURPLE,
-    RESET,
     SENSOR_BATTERY_SOC,
     SENSOR_LOAD_POWER,
     SENSOR_PV_POWER,
@@ -42,7 +39,6 @@ class DailyStats:
     def __init__(
         self,
         hass: HomeAssistant,
-        forecaster: Solcast | Meteo | ForecastSolar,
         load_history_days: int = DEFAULT_LOAD_AVERAGE_DAYS,
     ) -> None:
         """Initialize key variables.
@@ -55,29 +51,43 @@ class DailyStats:
         """
         # General info
         self.hass = hass
-        self.forecaster: Solcast | Meteo | ForecastSolar = forecaster
         self.days_load_history: int = load_history_days  # Default days of load history
-        self._timezone = ZoneInfo(self.hass.config.time_zone)
         self._average_hourly_load: dict[int, int] = dict.fromkeys(
             range(HRS_PER_DAY), DEFAULT_LOAD_ESTIMATE
         )
-        self._battery_hourly_soc: dict[int, float] = dict.fromkeys(range(HRS_PER_DAY), 0)
+        self._battery_hourly_soc: dict[int, float] = dict.fromkeys(
+            range(HRS_PER_DAY), 0
+        )
 
-        self._pv_performance_ratios: dict[int, float] = dict.fromkeys(range(HRS_PER_DAY), 1.0)
-        self._forecast_yesterday_adjusted: dict[int, int] = dict.fromkeys(range(HRS_PER_DAY), 0)
-        self._forecast_today_adjusted: dict[int, int] = dict.fromkeys(range(HRS_PER_DAY), 0)
-        self._forecast_tomorrow_adjusted: dict[int, int] = dict.fromkeys(range(HRS_PER_DAY), 0)
+        self._pv_performance_ratios: dict[int, float] = dict.fromkeys(
+            range(HRS_PER_DAY), 1.0
+        )
+        self._forecast_yesterday_adjusted: dict[int, int] = dict.fromkeys(
+            range(HRS_PER_DAY), 0
+        )
+        self._forecast_today_adjusted: dict[int, int] = dict.fromkeys(
+            range(HRS_PER_DAY), 0
+        )
+        self._forecast_tomorrow_adjusted: dict[int, int] = dict.fromkeys(
+            range(HRS_PER_DAY), 0
+        )
         self._status = Status.NOT_CONFIGURED
         self._last_update = dt_util.now() - timedelta(days=1)
 
-    async def async_initialize(self) -> None:
+    async def async_initialize(self, forecaster: Solcast | Meteo | ForecastSolar) -> None:
         """Load battery data from Home Assistant sensors."""
         # Run update_data to fetch the latest battery data
-        await self.update_data()
+        await self.update_data(forecaster)
 
-    async def update_data(self) -> None:
+    async def async_unload_entry(self) -> None:
+        """Unload resources held by DailyStats."""
+        # No external resources to clean up, but method provided for interface completeness
+        self._status = Status.NOT_CONFIGURED
+        logger.debug("Unloaded DailyStats entry")
+
+    async def update_data(self, forecaster: Solcast | Meteo | ForecastSolar) -> None:
         """Daily fetch and process data."""
-        if not self.forecaster:
+        if not forecaster:
             logger.warning("No forecaster available for CalculatedStats.")
             self._status = Status.FAULT
             return
@@ -85,7 +95,7 @@ class DailyStats:
         # Calculate the performance ratios and load averages once a day
         if dt_util.now().date() > self._last_update.date():
             # Get historical data for the calculations
-            forecasted_pv: dict[str, dict[int, int]] = self.forecaster.all_forecasts
+            forecasted_pv: dict[str, dict[int, int]] = forecaster.all_forecasts
             soc: dict[str, dict[int, int]] = await get_historical_hourly_states(
                 self.hass, SENSOR_BATTERY_SOC, days=DEFAULT_PV_MAX_DAYS, default=0
             )
@@ -238,9 +248,7 @@ def performance_ratios(
             total = sum(ratios.get(hour, 1.0) for _, ratios in daily_ratios.items())
             average_ratios[hour] = total / len(daily_ratios)
     logger.debug(
-        "\n%sAverage hourly ratios: \n%s%s",
-        PURPLE,
-        {hour: f"{ratio:.1f}" for hour, ratio in average_ratios.items()},
-        RESET
+        "Unusual hourly ratios: %s",
+        {hour: f"{ratio:.1f}" for hour, ratio in average_ratios.items() if ratio != 1.0},
     )
     return average_ratios

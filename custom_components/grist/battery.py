@@ -22,10 +22,12 @@ Usage:
 
 """
 
-# from config.custom_components.hacs.utils import data
+import logging
+
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    DEBUGGING,
     DEFAULT_BATTERY_CAPACITY_AH,
     DEFAULT_BATTERY_FLOAT_VOLTAGE,
     DEFAULT_BATTERY_MIN_SOC,
@@ -35,6 +37,12 @@ from .const import (
     Status,
 )
 from .hass_utilities import get_number, get_state_as_float, sum_states_starting_with
+
+logger: logging.Logger = logging.getLogger(__name__)
+if DEBUGGING:
+    logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
 
 
 class Battery:
@@ -60,6 +68,13 @@ class Battery:
         """Load battery data from Home Assistant sensors."""
         # Run update_data to fetch the latest battery data
         await self.update_data()
+
+    async def async_unload_entry(self) -> None:
+        """Unload the battery entry."""
+        if self._unsub_update:
+            self._unsub_update()
+            self._unsub_update = None
+        logger.debug("Unloaded battery entry")
 
     async def update_data(self) -> None:
         """Fetch and process data from Home Assistant sensors."""

@@ -8,6 +8,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import OptionsFlow  # Add this import
 from homeassistant.core import callback
 
 from .const import (
@@ -27,60 +28,82 @@ from .const import (
     HISTORY_MIN,
     HOUR_MAX,
     HOUR_MIN,
+    PURPLE,
+    RESET,
     BoostMode,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
+
 def boost_schema(options: dict[str, Any]) -> vol.Schema:
     """Return the options schema for Grist."""
-    return vol.Schema({
-        vol.Required(
-            "boost_mode", default=str(options.get("boost_mode", DEFAULT_GRIST_MODE))
-        ): vol.In(BOOST_MODE_OPTIONS),
-    })
+    return vol.Schema(
+        {
+            vol.Required(
+                "boost_mode", default=str(options.get("boost_mode", DEFAULT_GRIST_MODE))
+            ): vol.In(BOOST_MODE_OPTIONS),
+        }
+    )
+
 
 def confirm_schema(options: dict[str, Any]) -> vol.Schema:
     """Return a schema requiring explicit user confirmation to disable boost mode.
 
     The 'confirm' field is a safety confirmation for disabling boost mode, with a default of False.
     """
-    return vol.Schema({
-        vol.Required("confirm", default=False): bool
-    })
+    return vol.Schema({vol.Required("confirm", default=False): bool})
+
 
 def details_schema(options: dict[str, Any]) -> vol.Schema:
     """Return the options schema for Grist."""
-    return vol.Schema({
-        vol.Required("grist_start", default=DEFAULT_GRIST_START): vol.All(
-            vol.Coerce(int), vol.Range(min=HOUR_MIN, max=HOUR_MAX)
-        ),
-        vol.Required("grist_end", default=DEFAULT_GRIST_END): vol.All(
-            vol.Coerce(int), vol.Range(min=HOUR_MIN, max=HOUR_MAX)
-        ),
-        vol.Required(
-            "update_hour",
-            default=options.get("update_hour", DEFAULT_UPDATE_HOUR),
-        ): vol.All(vol.Coerce(int), vol.Range(min=HOUR_MIN, max=HOUR_MAX)),
-        vol.Required(
-            "history_days",
-            default=options.get("history_days", DEFAULT_LOAD_AVERAGE_DAYS),
-        ): vol.All(vol.Coerce(int), vol.Range(min=HISTORY_MIN, max=HISTORY_MAX)),
-        vol.Required(
-            "minimum_soc",
-            default=options.get("minimum_soc", DEFAULT_BATTERY_MIN_SOC),
-        ): vol.All(
-            vol.Coerce(int),
-            vol.Range(min=GRIST_MIN_SOC, max=GRIST_MAX_SOC),
-        ),
-        vol.Required(
-            "grist_manual",
-            default=options.get("grist_manual", DEFAULT_MANUAL_GRIST),
-        ): vol.All(
-            vol.Coerce(int),
-            vol.Range(min=GRIST_MIN_SOC, max=GRIST_MAX_SOC),
-        ),
-})
+    return vol.Schema(
+        {
+            vol.Required("grist_start", default=DEFAULT_GRIST_START): vol.All(
+                vol.Coerce(int), vol.Range(min=HOUR_MIN, max=HOUR_MAX)
+            ),
+            vol.Required("grist_end", default=DEFAULT_GRIST_END): vol.All(
+                vol.Coerce(int), vol.Range(min=HOUR_MIN, max=HOUR_MAX)
+            ),
+            vol.Required(
+                "update_hour",
+                default=options.get("update_hour", DEFAULT_UPDATE_HOUR),
+            ): vol.All(vol.Coerce(int), vol.Range(min=HOUR_MIN, max=HOUR_MAX)),
+            vol.Required(
+                "history_days",
+                default=options.get("history_days", DEFAULT_LOAD_AVERAGE_DAYS),
+            ): vol.All(vol.Coerce(int), vol.Range(min=HISTORY_MIN, max=HISTORY_MAX)),
+            vol.Required(
+                "minimum_soc",
+                default=options.get("minimum_soc", DEFAULT_BATTERY_MIN_SOC),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=GRIST_MIN_SOC, max=GRIST_MAX_SOC),
+            ),
+            vol.Required(
+                "grist_manual",
+                default=options.get("grist_manual", DEFAULT_MANUAL_GRIST),
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(min=GRIST_MIN_SOC, max=GRIST_MAX_SOC),
+            ),
+        }
+    )
+
+
+def to_hour(hour: int | None) -> str:
+    """Convert an integer hour (0-23) to a string representation."""
+    if hour is None:
+        return "oops"
+    if hour == 0:
+        return "midnight"
+    if 1 <= hour < 12:
+        return f"{hour}am"
+    if hour == 12:
+        return "noon"
+    if 13 <= hour < 24:
+        return f"{hour - 12}pm"
+    raise ValueError("Invalid hour")
 
 
 class GristConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -108,56 +131,65 @@ class GristConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Get the options flow for this handler."""
         return GristOptionsFlow()
 
-class GristOptionsFlow(config_entries.OptionsFlow):
+
+class GristOptionsFlow(OptionsFlow):
     """Handle the options flow for Grid Boost."""
 
     def __init__(self) -> None:
-        """Initialize temporary user input during optional confirmation process."""
-        self._pending_user_mode = {}
+        self._pending_user_options: dict[str, Any] = {}
 
     @property
     def options(self) -> dict[str, Any]:
         """Return the current options from the config entry."""
-        if hasattr(self, "config_entry") and self.config_entry is not None:
-            return dict(self.config_entry.options)
-        return {}
+        return dict(self.config_entry.options)
 
-
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         """Start the options flow by asking for the boost mode."""
         if user_input is None:
             return self.async_show_form(
-                step_id="init",
-                data_schema=boost_schema(dict(self.options))
+                step_id="init", data_schema=boost_schema(self.options)
             )
 
-        self._pending_user_mode = user_input
-        if user_input.get("boost_mode") == BoostMode.OFF and not user_input.get("confirm"):
-            return await self.async_step_confirm(None)
-        return await self.async_step_details()
+        options = dict(self.options)
+        options.update(user_input)
+        self._pending_user_options = options
+        if user_input.get("boost_mode") == BoostMode.OFF and not user_input.get(
+            "confirm"
+        ):
+            return await self.async_step_confirm(user_input=None)
+        return await self.async_step_details(user_input=None)
 
-    async def async_step_confirm(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+    async def async_step_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         """Handle the confirmation of turning off the boost mode."""
         if user_input is None:
             return self.async_show_form(
                 step_id="confirm",
-                data_schema=confirm_schema(dict(self._pending_user_mode)),
+                data_schema=confirm_schema(self._pending_user_options),
             )
-        # If the user confirms, go to the next step. If not, restart the process. (This is recursive, but is
-        #   very unlikely to go deep.)
         if user_input.get("confirm"):
-            return await self.async_step_details(None)
+            return await self.async_step_details(user_input=None)
         return await self.async_step_init(None)
 
-    async def async_step_details(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+    async def async_step_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         """Handle the details step."""
         if user_input is None:
             return self.async_show_form(
                 step_id="details",
-                data_schema=details_schema(dict(self.options)),
+                data_schema=details_schema(self._pending_user_options),
             )
-        options = dict(self.options)
-        if self._pending_user_mode:
-            options.update(self._pending_user_mode)
-        options.update(user_input)
-        return self.async_create_entry(title=DOMAIN, data=options)
+        self._pending_user_options.update(user_input)
+        msg = (
+            f"{PURPLE}\n------------------------GRIST options updated with the following settings------------------------"
+            f"\n   Boost_mode: {self._pending_user_options.get('boost_mode')} - Manual SoC: {self._pending_user_options.get('grist_manual')}%% - Minimum SoC: {self._pending_user_options.get('minimum_soc')}%%"
+            f"\n   Boost from: {to_hour(self._pending_user_options.get('grist_start'))} - {to_hour(self._pending_user_options.get('grist_end'))}, fetching forecast at: {to_hour(self._pending_user_options.get('update_hour'))} using {self._pending_user_options.get('history_days')} days of load history"
+            f"\n-------------------------------------------------------------------------------------------------{RESET}"
+        )
+        _LOGGER.debug(msg)
+
+        return self.async_create_entry(data=self._pending_user_options)

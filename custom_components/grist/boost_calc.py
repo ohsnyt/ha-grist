@@ -77,7 +77,7 @@ def calculate_required_boost(
         # Log the calculations for the hour, reporting if we drop below the minimum SoC
         warning = " <<< LOW SoC" if running_soc < minimum_soc else ""
         msg.append(
-            f"{hour:>2}  {round(starting):>8} {round(load):>6}  {round(pv):>6}  {round(ending):>8} |      {round(running_soc):>4}{warning}"
+            f"{hour:>2}  {round(starting):>9} {round(load):>6}  {round(pv):>6}  {round(ending):>8} |      {round(running_soc):>4}{warning}"
         )
         starting = ending
 

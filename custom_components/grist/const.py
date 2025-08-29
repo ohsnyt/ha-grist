@@ -81,6 +81,7 @@ SENSOR_FORECAST_SOLAR_TODAY = "sensor.solcast_pv_forecast_forecast_day"
 SENSOR_METEO_BASE = "sensor.energy_production"
 
 NUMBER_CAPACITY_POINT_1 = "number.deye_sunsynk_sol_ark_capacity_point_1"
+SWITCH_TOU_STATE = "switch.deye_sunsynk_sol_ark_use_timer"
 
 # Items for Solcast integration
 DEFAULT_SOLCAST_PERCENTILE = 25
