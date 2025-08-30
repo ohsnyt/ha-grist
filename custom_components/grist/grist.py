@@ -185,7 +185,7 @@ class GristScheduler:
         integration = await self._is_integration_running(integration_list)
 
         if integration:
-            logger.info("%sSelected forecaster: %s%s", PURPLE, integration, RESET)
+            logger.info("Selected forecaster: %s", integration)
             if integration == "solcast_solar":
                 self.forecaster = Solcast(self.hass)
             elif integration == "forecast_solar":
@@ -196,7 +196,7 @@ class GristScheduler:
             if self.forecaster is not None:
                 await self.forecaster.async_initialize()
             return True
-        logger.info("%s\nNo forecast integration found%s", PURPLE, RESET)
+        logger.warning("No forecast integration found")
         return False
 
     async def async_unload_entry(self) -> None:
@@ -223,17 +223,15 @@ class GristScheduler:
         all_entries: list[ConfigEntry[Any]] = self.hass.config_entries.async_entries()
         # Filter entries for the specific integration
         if not all_entries:
-            logger.debug("No config entries found for %s", integration_list)
+            logger.warning("No forecaster entries found in your system! Looked for %s", integration_list)
             return None
 
         for integration in integration_list:
             entries = [entry for entry in all_entries if entry.domain == integration]
-            logger.debug("Entries for %s: %s", integration, entries)
             if any(entry.state == ConfigEntryState.LOADED for entry in entries):
-                logger.debug("Integration %s is loaded", integration)
                 return integration
 
-        logger.debug("No running integration found in %s", integration_list)
+        logger.warning("No running integration found in %s", integration_list)
         return None
 
     async def _daily_tasks(self) -> None:

@@ -117,6 +117,10 @@ class Meteo:
         hourly forecast data, and updates the internal forecast dictionary. Removes
         outdated forecasts and updates the integration status.
         """
+        if self._next_update > dt_util.now():
+            logger.debug("Next update not due yet")
+            return
+
         forecast_prefixes = [SENSOR_METEO_BASE]
         forecast_days_ids = await find_entities_by_prefixes(
             self.hass, forecast_prefixes
@@ -136,15 +140,9 @@ class Meteo:
             return
 
         self._remove_old_forecasts()
-
+        self._next_update = dt_util.now() + timedelta(hours=1)
         self._status = Status.NORMAL
-
-        logger.info(
-            "\n%sUpdated Meteo forecast data for %d days%s",
-            PURPLE,
-            len(self._forecast),
-            RESET,
-        )
+        logger.info("Updated Meteo forecast data for %d days", len(self._forecast))
 
     async def _process_forecast_day(self, entity_id: str) -> bool:
         """Process a single Meteo forecast day sensor.
@@ -163,14 +161,14 @@ class Meteo:
 
         attributes = result.get("attributes")
         if not attributes:
-            logger.warning(
+            logger.debug(
                 "No attributes found for %s. Probably a daily total.", entity_id
             )
             return True
 
         detailed_hourly = attributes.get("wh_period")
         if not detailed_hourly:
-            logger.warning(
+            logger.debug(
                 "No forecast wh_period attribute found for %s. Probably a daily total.",
                 entity_id,
             )

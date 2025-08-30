@@ -266,7 +266,7 @@ def performance_ratios(
             or soc.get(this_day_str) is None
             or actual_pv.get(this_day_str) is None
         ):
-            logger.debug("Skipping %s due to missing data", this_day_str)
+            # No forecast details available for this day, go to the next day
             continue
         hourly_ratios = dict.fromkeys(range(HRS_PER_DAY), 1.0)
         for hour in range(HRS_PER_DAY):

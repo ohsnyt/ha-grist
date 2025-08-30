@@ -17,9 +17,6 @@ from .const import DOMAIN, PLATFORMS, UPDATE_INTERVAL
 from .coordinator import GristUpdateCoordinator
 from .grist import GristScheduler
 
-PURPLE = "\033[0;35m"
-RESET = "\033[0m"
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -36,8 +33,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     Returns:
         True if setup was successful, False otherwise.
+
     """
-    _LOGGER.info("%sStarting GRIST Scheduler%s", PURPLE, RESET)
+    _LOGGER.debug("Starting GRIST Scheduler")
 
     # Initialize GRIST Scheduler
     grist = GristScheduler(
@@ -47,7 +45,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await grist.async_setup()
 
     # Initialize Coordinator
-    _LOGGER.debug("Setting up coordinator for entry: %s", entry.entry_id)
     coordinator = GristUpdateCoordinator(
         hass=hass,
         update_interval=UPDATE_INTERVAL,
@@ -55,7 +52,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Get first data
-    _LOGGER.debug("Performing first refresh for entry: %s", entry.entry_id)
     await coordinator.async_config_entry_first_refresh()
 
     # Store coordinator and grist in hass.data for platform access
@@ -66,7 +62,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Forward the setup to the sensor platform(s)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    _LOGGER.debug("Registering update listener for entry: %s", entry.entry_id)
 
     async def handle_entry_update(
         hass: HomeAssistant, updated_entry: ConfigEntry
@@ -78,14 +73,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         Args:
             hass: The Home Assistant instance.
             updated_entry: The updated config entry.
+
         """
-        _LOGGER.debug(
-            "Config entry %s updated with options: %s",
-            updated_entry.entry_id,
-            updated_entry.options,
-        )
         await hass.config_entries.async_reload(updated_entry.entry_id)
-        _LOGGER.debug("Reloaded entry: %s after update", updated_entry.entry_id)
 
     # Register the update listener for config entry option changes
     entry.async_on_unload(entry.add_update_listener(handle_entry_update))
@@ -106,12 +96,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         True if unload was successful, False otherwise.
 
     """
-    _LOGGER.debug("Unloading entry: %s, state: %s", entry.entry_id, entry.state)
     try:
         unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-        _LOGGER.debug(
-            "Platform unload result for entry %s: %s", entry.entry_id, unload_ok
-        )
         if unload_ok:
             entry_data = hass.data[DOMAIN].pop(entry.entry_id, {})
             coordinator = entry_data.get("coordinator")
@@ -122,11 +108,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await grist.async_unload_entry()
             if not hass.data[DOMAIN]:
                 hass.data.pop(DOMAIN)
-            _LOGGER.debug("Unloaded entry: %s", entry.entry_id)
-        else:
-            _LOGGER.error(
-                "Failed to unload %s for entry: %s", PLATFORMS, entry.entry_id
-            )
     except Exception as e:
         _LOGGER.error("Error unloading entry %s: %s", entry.entry_id, e)
         return False
