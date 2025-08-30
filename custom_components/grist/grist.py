@@ -453,6 +453,11 @@ class GristScheduler:
             logger.debug("Home Assistant is still starting...")
             return {"status": Status.STARTING}
 
+        # Verify that the forecaster is still running. If not, set status to offline.
+        if not self.forecaster or self.forecaster.status != Status.NORMAL:
+            logger.warning("Forecaster is not currently running...")
+            return {"status": Status.FAULT}
+
         # Check if the daily tasks need to be run.
         await self._daily_tasks()
 
@@ -481,21 +486,22 @@ class GristScheduler:
 
         remaining_battery_time: int = await self._calculate_remaining_battery_time()
 
+        calculated_pv_now: int = self.daily.forecast_today_adjusted.get(now.hour, 0) if self.daily else 0
+
         # Return the dictionary with all the calculated data
         return {
-            "status": self.status,
+            "status": self.status.name if hasattr(self.status, "name") else str(self.status),
             "battery_exhausted": (
-                now + timedelta(minutes=remaining_battery_time)
+            now + timedelta(minutes=remaining_battery_time)
             ).strftime("%a %-I:%M %p"),
             "battery_time_remaining": round(remaining_battery_time / 60, 1),
-            "grist_actual": boost_actual if boost_actual is not None else "Unknown",
-            "grist_manual": self.grist_manual,
-            "grist_mode": self.boost_mode,
-            "grist_calculated": self.grist_calculated,
-            "grist_day": f"{(now + timedelta(days=1)).strftime('%A')} the {ordinal((now + timedelta(days=1)).day)}",
-            # "grist_start": self.grist_start,
+            "actual": boost_actual if boost_actual is not None else "Unknown",
+            "manual": self.grist_manual,
+            "mode": str(self.boost_mode).title() if self.boost_mode else None,
+            "calculated": self.grist_calculated,
+            "calculated_pv_now": calculated_pv_now,
+            "day": f"{(now + timedelta(days=1)).strftime('%A')} the {ordinal((now + timedelta(days=1)).day)}",
             "load_days": self.days_of_load_history,
-            # "update_hour": self.update_hour,
             "load_averages": self.daily.average_hourly_load if self.daily else {},
             "pv_ratios": self.daily.pv_performance_ratios if self.daily else {},
             "pv_calculated_today": self.daily.forecast_today_adjusted
@@ -512,4 +518,8 @@ class GristScheduler:
             if self.daily
             else 0,
             "pv_calculated_tomorrow_day": f"{(now + timedelta(days=1)).strftime('%A')} the {ordinal((now + timedelta(days=1)).day)}",
+            "update_hour": self.update_hour,
+            "min_soc": self.minimum_soc,
+            "start": self.grist_start,
+            "end": self.grist_end,
         }

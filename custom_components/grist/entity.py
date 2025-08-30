@@ -24,7 +24,7 @@ Helper Functions:
 All I/O is asynchronous and compatible with Home Assistant's async patterns.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 import re
 from typing import Any
@@ -36,24 +36,37 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import DEBUGGING, DOMAIN, NBSP, Status
+from .const import DEBUGGING, DOMAIN, NBSP
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG if DEBUGGING else logging.INFO)
 
 
-def printable_hour(hour: int) -> str:
-    """Return a printable hour string in 12-hour format with 'am' or 'pm' suffix.
+def printable_hour(hour: int | str) -> str:
+    """Return an easily readable hour.
 
     Args:
         hour: Hour in 24-hour format (0-23).
 
     Returns:
-        Formatted string in 12-hour format with am/pm.
+        Formatted string with midnight # am, noon, # pm
 
     """
-    thehour = hour % 12 if hour > 0 else 12
-    return f"{NBSP * 2 if thehour < 10 else ''}{thehour} {'am' if hour < 12 else 'pm'}"
+    if hour == 'n/a':
+        return "n/a"
+    if type(hour) is str:
+        return hour
+    if hour == 0:
+        return "midnight"
+    if isinstance(hour, int):
+        if hour < 12:
+            return f"{hour} am"
+        if hour == 12:
+            return "noon"
+        if hour < 24:
+            return f"{hour} pm"
+        return str(hour)
+    return str(hour)
 
 
 def count_data(input_str: str) -> int:
@@ -125,18 +138,25 @@ class SchedulerEntity(CoordinatorEntity):
         Includes status, manual and calculated boost, minimum SoC, load days,
         update hour, and PV forecasts for today and tomorrow.
         """
-        now = dt_util.now()
-        today: str = now.strftime("%a")
-        tomorrow: str = (now + timedelta(days=1)).strftime("%a")
+        days = self.coordinator.data.get('load_days', 'n/a')
+        if days == 'n/a':
+            days = "n/a"
+        elif days == '1':
+            days = '1 day'
+        else:
+            days = f"{days} days"
+
         return {
-            "status": self.coordinator.data.get("status", Status.NOT_CONFIGURED).state,
-            "manual": self.coordinator.data.get("manual_grist", 30),
-            "calculated": self.coordinator.data.get("grist_calculated", 20),
-            "min_soc": self.coordinator.data.get("min_soc", 20),
-            "load_days": self.coordinator.data.get("load_days", 3),
-            "update_hour": self.coordinator.data.get("update_hour", 3),
-            "forecast_today": f"({today}) {self.coordinator.data.get('pv_calculated_today_day', 0)}",
-            "forecast_tomorrow": f"({tomorrow}) {self.coordinator.data.get('pv_calculated_tomorrow_day', 0)}",
+            "status": self.coordinator.data.get("status", "n/a"),
+            "mode": self.coordinator.data.get("mode", "n/a"),
+            "calculated": f"{self.coordinator.data.get('calculated', 'n/a')}%" if self.coordinator.data.get("calculated") is not None else "n/a",
+            "manual": f"{self.coordinator.data.get('manual', 'n/a')}%" if self.coordinator.data.get("manual") is not None else "n/a",
+            "actual": f"{self.coordinator.data.get('actual', 'n/a')}%" if self.coordinator.data.get("actual") is not None else "n/a",
+            "minimum_soc": f"{self.coordinator.data.get('min_soc', 'n/a')}%" if self.coordinator.data.get("min_soc") is not None else "n/a",
+            "load_days": days,
+            "start": printable_hour(self.coordinator.data.get("start", "n/a")),
+            "end": printable_hour(self.coordinator.data.get("end", "n/a")),
+            "update_hour": printable_hour(self.coordinator.data.get("update_hour", "n/a")),
         }
 
     @property
@@ -152,7 +172,7 @@ class SchedulerEntity(CoordinatorEntity):
     @property
     def state(self) -> str:
         """Return the current mode of the scheduler."""
-        return self.coordinator.data.get("grist_mode", "State unknown")
+        return f"{self.coordinator.data.get('status', 'Status n/a')}: {self.coordinator.data.get('mode', 'Mode n/a')}"
 
 
 class RatioEntity(CoordinatorEntity):
@@ -441,62 +461,3 @@ class BatteryLifeEntity(CoordinatorEntity):
         )
         return remaining
 
-
-class ApexChartEntity(CoordinatorEntity):
-    """Class for GRIST Apex Chart entity."""
-
-    def __init__(
-        self,
-        entry_id: str,
-        coordinator: DataUpdateCoordinator[dict[str, Any]],
-        # parent: str,
-    ) -> None:
-        """Initialize the sensor."""
-
-        super().__init__(coordinator)
-        self._coordinator = coordinator
-        self._attr_unique_id = f"{entry_id}_apex_chart"
-        self._attr_icon = "mdi:chart-line"
-        self._attr_name = "Forecast Chart"
-        self._device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry_id)},
-            name=self._attr_name,
-        )
-
-    @property
-    def name(self) -> str | None:
-        """Return the name of the sensor."""
-        return (
-            f"{self._coordinator.data.get('forecast_chart_day', '')} {self._attr_name}"
-        )
-
-    @property
-    def unique_id(self) -> str | None:
-        """Return a unique ID."""
-        return self._attr_unique_id
-
-    @property
-    def state(self) -> str:
-        """Return the state of the sensor."""
-        return (
-            "working"
-            if self._coordinator.data.get("forecast_chart_load", {})
-            else "idle"
-        )
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the extra state attributes."""
-        my_load: dict[datetime, int] = self._coordinator.data.get(
-            "forecast_chart_load", {}
-        )
-        my_pv: dict[datetime, int] = self._coordinator.data.get("forecast_chart_pv", {})
-        my_soc: dict[datetime, int] = self._coordinator.data.get(
-            "forecast_chart_soc", {}
-        )
-        return {
-            "load": my_load,
-            "pv": my_pv,
-            "soc": my_soc,
-            "test": 100,  # Placeholder for test data
-        }

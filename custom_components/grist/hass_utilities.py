@@ -142,12 +142,15 @@ async def get_state_as_float(
         state_value = state["state"]
         try:
             # Check for unavailable/unknown and non-numeric values
-            if state_value in ("unavailable", "unknown", None):
-                logger.error("Invalid sensor: %s", entity_id)
+            if state_value in ("unknown", None):
+                logger.warning("Invalid sensor key: %s", entity_id)
+                return default
+            if state_value in ("unavailable"):
+                logger.warning("%s is not currently available.", entity_id)
                 return default
             return float(state_value)
         except (ValueError, TypeError):
-            logger.error("Invalid sensor: %s", entity_id)
+            logger.error("Unknown sensor error: %s", entity_id)
     return default
 
 
@@ -349,10 +352,18 @@ async def get_number(
     """
     state = await get_entity(hass, entity_id)
     if state and "state" in state:
+        state_value = state["state"]
         try:
-            return float(state["state"])
-        except ValueError:
-            logger.error("MQTT down or invalid number sensor: %s", entity_id)
+            # Check for unavailable/unknown and non-numeric values
+            if state_value in ("unknown", None):
+                logger.warning("Invalid sensor key: %s", entity_id)
+                return default
+            if state_value in ("unavailable"):
+                logger.warning("%s is not currently available.", entity_id)
+                return default
+            return float(state_value)
+        except (ValueError, TypeError):
+            logger.error("Unknown sensor error: %s", entity_id)
     return default
 
 

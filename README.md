@@ -39,13 +39,20 @@ Basically the system monitors PV forecasts, and compares forecasts to actual PV 
 
 Sol-Ark (Deye) inverters allow you to set six Time of Use slots where your battery will charge from the grid if the state of charge drops below the set value for that time slot. This integration sets the starting time of the first time slot (defaults to midnight) and sets the inverter state of charge setting for that period based on either the calculated (*automatic*) value, or the value you set for the *manual* mode. The start of the second slot marks the end of the off-peak charging time, and it defaults to 6am.
 
+Solar Assistant, a Raspberry Pi based tool to monitory your solar system, provides both the data to this integration as well as a means to control the inverter settings. (Earlier verions of this integration used data from the deye (and later solark) cloud servers, however that proved signficantly less reliable.)
+
+I have found that the performance of my solar panels varies from season to season and year to year. Panels will slowly degrade. Some years have more dust on the panels than other years. During the spring my panels have more morning shade than during the summer. All these changing factors affect performance and how much power I need from the grids. This integration takes those changes into account and adjusts grid boost based on those changes!
+
 ### Data Collection and Forecasting
 
 - **Solar Forecasts:**
-  The integration fetches hourly solar production forecasts from supported APIs. These are updated twice daily; just past midnight local time, and at a configurable hour (default: 22:00 local time).
+  GRIST fetches hourly solar production forecasts from supported APIs. These are updated twice daily; just past midnight local time, and at a configurable hour (default: 22:00 local time).
 
 - **PV History:**
-  The component tracks a rollling 21 day history of PV forecasts to compare forecasts to actual performance. This allows for more precise automatic adjustments of forecasts specific to your system, local shading, etc.
+  GRIST tracks a rollling 21 day history of PV forecasts to compare forecasts to actual performance. This allows for more precise automatic adjustments of forecasts specific to your system, local shading, etc.
+
+  **Load History**
+  GRIST monitors recent load usage for each hour of the day, computing averages for each hour so that it can calculate how your battery will likely perform through the coming day given the forecast for solar power and the actual recent performance of your panels.
 
 ### Calculations
 
@@ -88,14 +95,28 @@ Sol-Ark (Deye) inverters allow you to set six Time of Use slots where your batte
 
 ### Initial Setup
 
-1. **Install the Integration:**
-   Copy the `grist` folder to your Home Assistant `custom_components` directory. HACS installation will be added in a future release.
+**Prerequisites:**
+  To use the integration, you must have:
 
-2. **Add via Home Assistant UI:**
-   Go to *Settings → Devices & Services → Add Integration* and search for "Grid Boost". Install the Grid Boost integration.
+- a Sol-Ark (or Deye based) inverter,
+- an LFP (Lithium Iron Phosphate, or LiFePo4) battery that is able to report it's state of charge to the inverter, and
+- Solar Assistant monitoring your inverter and batteries and reporting real-time data to your instance of Home Assistant
 
-3. **Configure Options:**
-   Set your preferred boost mode, manual SoC, grid boost start time, update hour, history days, and minimum SoC via the integration options panel.
+In addition you must install one of three solar forecaster tools:
+
+- [Solcast]([https://solcast.com](https://github.com/BJReplay/ha-solcast-solar)
+- [Forecast.solar](https://forecast.solar/)
+- [Meteo](https://github.com/rany2/ha-open-meteo-solar-forecast)
+
+(If you install more than one, they will be selected in the order presented above.)
+
+I use the Solcast tool because I like the unique feature it offers of allowing you to decide how pessimistic (or optimistic) you want the forecast to be. Solcast give a 10 percentile forecast (worst case), a 50 percentile forecast (most likely) and a 90% forecast (best case). When heavy but intermitted clouds are forecast, the spread between 10 and 90 percentile can be quite large. GRIST extrapolates those forecasts so you can choose any percentile you want between 10 and 90. Since I am optimizing to avoid using the grid after 6am, I normally use a 25 percentile figure. (I'm not TOTALLY pessimistic!!!)
+
+**Install the Integration:**
+   TODO: HACS installation instructions and link to page
+
+**Configure Options:**
+   Set your preferred options via the integration options panel. For the system to actually control the inverter and set your early morning grid boost level, you must set the integration into *Automatic* mode.
 
 ### Options
 
@@ -112,21 +133,21 @@ Sol-Ark (Deye) inverters allow you to set six Time of Use slots where your batte
 - **Minimum State of Charge (%):**
   Set the minimum battery SoC value. This is the buffer so your battery does not run down to 0% state of charge. The default is 20%.
 
+## Removal
+
+To remove GRIST, Go to Settings/Devices & Services/GRIST. Using the three vertical dots next to CONFIGURE, select DELETE from the drop down menu. If you want to turn off the Time of Use feature on your inverter, you should first click on the CONFIGURE button and set the Boost Mode to Off. You will need to confirm that choice, continue on to the details form, and Save. This will turn off the Time of Use mode through Solar Assistant. You can then remove GRIST.
+
 ## Notes
 
-As mentioned above, there are six Time of Use slots in a Deye (Sol-Ark) inverter. This integration turns on the Time of Use feature, manages slot 1 start time and state of charge value, and sets the start time of slot 2. (It does not manage the power level used from the grid. The inverter default is the maximum value for your inverter model. You may change this value if you like.)
+As mentioned above, there are six Time of Use slots in a Deye (Sol-Ark) inverter. GRIST turns on the Time of Use feature, manages slot 1 start time and state of charge value, and sets the start time of slot 2. (It does not manage the power level used from the grid. The inverter default is the maximum value for your inverter model. You may change this value if you like.)
 
-The inverter requires all slots to be set in order to use the Time of Use feature, and will have default values. You may change the values in slots 2-6 as you desire. Remember that this integration does manage the time value for slot 2. Just be sure to read your inverter documentation before making changes.
+The inverter requires all slots to be set in order to use the Time of Use feature, and will have default values. You may change the values in slots 3-6 as you desire. Remember that this integration does manage the time value for slot 2. Be sure to read your inverter documentation before making changes.
 
-The inverter Time of Use feature also allows you to set the days when Grid charging will take place. Unfortunely this is not accessable through Solar Assistant. The inverter should default to turn on all days. You may want to check this.
+The inverter Time of Use feature allows you to set the days when Grid charging will take place. This is not accessable through Solar Assistant. The inverter will default to turn on all days. (GRIST is designed with the assumption that charging will happen every day.)
 
 If you use the other slots, I recommend setting the values to a very low number such as 2-5% so that your battery can use as much of the capacity it has instead of pulling from the grid.
 
-I have chosen a "super saver" rate with my energy provider. This provides very low rates from midnight until 6 am, but very high rates from 4pm until 8pm local time.
-
-Early on when my battery was smaller, I wanted to make sure that I never used grid power from 4-8pm, so I set my 2nd time slot, which starts at 6 am, to 10% state of charge. I then set the 3rd slot to 3pm and set the state of charge to 50%. If I didn't have enought sun to bring the state of charge to 50% by 3pm, the grid would boost it to that level. Then at the 4th slot to start at 4pm and set the state of charge back down to 2%. With my loads, I would never need grid power for the next four hours if I had 50% state of charge!
-
-I have been able to upgrade my battery capacity (if you add another battery, this integration will recognize that through Solar Assistant). I now do not need to worry about any of the Time of Use slots beyond the first slot. I have set all those remaining slots to 4%.
+TIP: Early on I had a pretty small solar panel array. There were days when I couldn't charge my battery enough before my peak electricity rates (4-8pm). I wanted to make sure that I never used grid power from 4-8pm. While I set slots 2,4,5 and 6 to 4%, I set the 3rd slot start one hour before the peak rate hour and boost, if neccesary, the battery to 45% by 4pm. This ensured that I always had enough power to get me through my peak-cost grid energy period by running only on my battery.
 
 ## File Structure
 
@@ -136,32 +157,15 @@ I have been able to upgrade my battery capacity (if you add another battery, thi
 - `coordinator.py` – Update coordinator for polling and data refresh
 - `daily_calcs.py` – Daily calculation logic for PV/load/boost
 - `entity.py` – Entity base classes and helpers
-- `forecast_solar.py`, `solcast.py`, `meteo.py` – Forecast provider modules
+- forecasters/`forecast_solar.py`, `solcast.py`, `meteo.py` – Forecast provider modules
 - `grist.py` – Main scheduler and calculation logic
 - `sensor.py` – Sensor entity definitions
 - `services.yaml` – Service definitions
-- `strings.json` – UI translation strings
-
----
-
-## Development Notes
-
-- **Python 3.13+** is required.
-- **Solar Assistant** is required. (Solar Assistant provides sensor data for actual PV data as well as manages Time of Use settings for the inverter.)
-- **Sol-Ark Inverter**. This has only been tested with a Sol-Ark 12K2P inverter. While it would not be hard to modify for other inverters, the current version is only tested with a single Sol-Ark 12K2P inverter.
-- Code is formatted with Ruff and linted with PyLint/MyPy.
-- All I/O is async; no blocking calls.
-- Follows Home Assistant's update coordinator and config flow patterns.
-- Constants are centralized in `const.py` for maintainability.
-- All sensors use unique IDs for state persistence. These are also maintained via const.py.
-
----
+- translations/`en.json` – UI translation strings
 
 ## Contributing
 
-Contributions are welcome! Please follow the code style and patterns used in this repository. See `.github/copilot-instructions.md` for detailed coding standards.
-
----
+Contributions are welcome! Please follow the code style and patterns used in this repository. (I strive to follow best practices used within the Home Assistant community.)
 
 ## License
 

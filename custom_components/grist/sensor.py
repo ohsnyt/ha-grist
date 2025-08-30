@@ -42,7 +42,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DEBUGGING, DOMAIN
 from .coordinator import GristUpdateCoordinator
 from .entity import (
-    ApexChartEntity,
     BatteryLifeEntity,
     LoadEntity,
     PVEntity_today,
@@ -63,11 +62,11 @@ class OhSnytSensorEntityDescription(SensorEntityDescription):
 
 
 GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
-    "pv_today_total": OhSnytSensorEntityDescription(
-        key="pv_today_total",
+    "pv_calculated_today_total": OhSnytSensorEntityDescription(
+        key="pv_calculated_today_total",
         icon="mdi:flash",
         name="Estimated PV power for today",
-        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
@@ -79,10 +78,17 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         native_unit_of_measurement=UnitOfPower.KILO_WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=1,
     ),
-    "calculated_boost": OhSnytSensorEntityDescription(
-        key="calculated_boost",
+    "pv_calculated_tomorrow_total": OhSnytSensorEntityDescription(
+        key="pv_calculated_tomorrow_total",
+        icon="mdi:flash",
+        name="Estimated PV power for tomorrow",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    "calculated": OhSnytSensorEntityDescription(
+        key="calculated",
         icon="mdi:battery",
         name="Calculated Grid Boost SoC",
         native_unit_of_measurement="%",
@@ -90,17 +96,35 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
     ),
-    "current_boost_setting": OhSnytSensorEntityDescription(
-        key="current_boost_setting",
+    "calculated_pv_now": OhSnytSensorEntityDescription(
+        key="calculated_pv_now",
+        icon="mdi:solar-panel",
+        name="Calculated PV Power Now",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+    ),
+    "actual": OhSnytSensorEntityDescription(
+        key="actual",
         icon="mdi:battery",
-        name="Current inverter Grid Boost setting",
+        name="Actual Grid Boost SoC on inverter",
         native_unit_of_measurement="%",
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
     ),
-    "manual_boost": OhSnytSensorEntityDescription(
-        key="manual_boost",
+    "mode": OhSnytSensorEntityDescription(
+        key="mode",
+        icon="mdi:battery",
+        name="Current inverter Grid Boost mode",
+        native_unit_of_measurement="%",
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+    ),
+    "manual": OhSnytSensorEntityDescription(
+        key="manual",
         icon="mdi:battery",
         name="Manual Grid Boost SoC",
         native_unit_of_measurement="%",
@@ -112,7 +136,7 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         key="battery_time_remaining",
         icon="mdi:timer-outline",
         name="Battery Time Remaining",
-        native_unit_of_measurement="h",
+        native_unit_of_measurement="hrs",
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
@@ -140,7 +164,6 @@ async def async_setup_entry(
     # Add custom entity sensors from entity.py
     entity_list = [
         SchedulerEntity,
-        ApexChartEntity,
         BatteryLifeEntity,
         LoadEntity,
         PVEntity_today,
@@ -204,8 +227,8 @@ class OhSnytSensor(CoordinatorEntity[GristUpdateCoordinator], SensorEntity):
     @property
     def name(self) -> str | None:
         """Return the name of the sensor."""
-        if self.entity_description.key == "grist_calculated":
-            day = self.coordinator.data.get("grist_day")
+        if self.entity_description.key == "calculated":
+            day = self.coordinator.data.get("day")
             if day:
                 return f"{self._attr_name or ''} ({day})"
         return self._attr_name
@@ -233,7 +256,9 @@ class OhSnytSensor(CoordinatorEntity[GristUpdateCoordinator], SensorEntity):
     def state(self) -> str | int | float | None:
         """Return the state of the sensor (legacy property)."""
         value = self.coordinator.data.get(self.entity_description.key)
-        if not isinstance(value, (int, float, type(None))):
+        if isinstance(value, int | float):
+            return f"{value:,}"  # Adds commas
+        if not isinstance(value, (str, type(None))):
             logger.error("Invalid type for state: %s (%s)", value, type(value))
             return None
         return value

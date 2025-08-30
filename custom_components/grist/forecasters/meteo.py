@@ -137,6 +137,8 @@ class Meteo:
 
         self._remove_old_forecasts()
 
+        self._status = Status.NORMAL
+
         logger.info(
             "\n%sUpdated Meteo forecast data for %d days%s",
             PURPLE,
