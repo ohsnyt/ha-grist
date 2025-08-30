@@ -1,4 +1,34 @@
-"""Utilites for Home Assistant shared by Grid Boost integration."""
+"""Utilities for Home Assistant shared by the GRIST integration.
+
+This module provides async helper functions for interacting with Home Assistant entities,
+sensors, and statistics. It includes utilities for finding entities by prefix, retrieving
+entity states and attributes, fetching and formatting historical statistics, and setting
+values for number and switch entities. All I/O is asynchronous and compatible with
+Home Assistant's async patterns.
+
+Key Features:
+- Find entities by prefix for dynamic sensor discovery.
+- Retrieve entity state and attributes safely.
+- Fetch and aggregate historical statistics for sensors.
+- Set values for number and switch entities via Home Assistant services.
+- Utility for calculating start and end datetimes for historical queries.
+
+Functions:
+    find_entities_by_prefixes: Find entities whose IDs start with given prefixes.
+    get_state: Get the state of an entity as a string or None.
+    get_entity: Get the state and attributes of an entity as a dict.
+    get_state_as_float: Get the state of an entity as a float, with default fallback.
+    sum_states_starting_with: Sum the states of all entities matching given prefixes.
+    get_multiday_hourly_states: Fetch and format hourly statistics for an entity over multiple days.
+    get_historical_hourly_states: Fetch and format hourly statistics for an entity, grouped by day.
+    get_number: Get the value of a number entity as a float.
+    set_number: Set the value of a number entity.
+    get_switch: Get the value of a switch entity as a bool.
+    set_switch: Set the value of a switch entity.
+    start_and_end_utc: Calculate UTC start and end datetimes for a given number of days.
+
+All logging follows Home Assistant conventions and respects the DEBUGGING flag.
+"""
 
 from __future__ import annotations
 
@@ -322,7 +352,7 @@ async def get_number(
         try:
             return float(state["state"])
         except ValueError:
-                logger.error("MQTT down or invalid number sensor: %s", entity_id)
+            logger.error("MQTT down or invalid number sensor: %s", entity_id)
     return default
 
 
@@ -338,6 +368,7 @@ async def set_number(hass: HomeAssistant, entity_id: str, value: int) -> None:
     await hass.services.async_call(
         "number", "set_value", {"entity_id": entity_id, "value": value}
     )
+
 
 async def get_switch(hass: HomeAssistant, entity_id: str) -> bool | None:
     """Get the value of a switch entity.
@@ -363,6 +394,7 @@ async def get_switch(hass: HomeAssistant, entity_id: str) -> bool | None:
             logger.error("MQTT down or invalid switch sensor: %s", entity_id)
     return None
 
+
 async def set_switch(hass: HomeAssistant, entity_id: str, value: bool) -> None:
     """Set the value of a switch entity.
 
@@ -376,10 +408,10 @@ async def set_switch(hass: HomeAssistant, entity_id: str, value: bool) -> None:
         "switch", "turn_on" if value else "turn_off", {"entity_id": entity_id}
     )
     logger.debug(
-            "\n------------------------------\nSet switch %s to %s\n------------------------------",
-            entity_id,
-            value
-        )
+        "\n------------------------------\nSet switch %s to %s\n------------------------------",
+        entity_id,
+        value,
+    )
 
 
 def start_and_end_utc(days=1) -> tuple[datetime, datetime]:

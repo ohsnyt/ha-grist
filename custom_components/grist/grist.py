@@ -1,4 +1,4 @@
-"""Grid Boost integration for Home Assistant.
+"""GRIST Scheduler integration for Home Assistant.
 
 Handles Time-of-Use battery and grid boost management, including scheduling, storage, and forecast calculations.
 """
@@ -8,8 +8,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
-import traceback
-from typing import Any, Self
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
@@ -37,10 +36,10 @@ from .const import (
     Status,
 )
 from .daily_calcs import DailyStats
-from .forecast_solar import ForecastSolar
+from .forecasters.forecast_solar import ForecastSolar
+from .forecasters.meteo import Meteo
+from .forecasters.solcast import Solcast
 from .hass_utilities import get_state, get_switch, set_number, set_switch
-from .meteo import Meteo
-from .solcast import Solcast
 
 logger: logging.Logger = logging.getLogger(__name__)
 if DEBUGGING:
@@ -125,7 +124,7 @@ class GristScheduler:
         self._refresh_boost_next_start = dt_util.now()
         self._daily_task_next_start = dt_util.now()
 
-        # Grid Boost settings
+        # GRIST settings
         self.grist_actual: int = DEFAULT_GRIST_STARTING_SOC
         self.grist_calculated: int = DEFAULT_GRIST_STARTING_SOC
         self.pv_adjusted_estimates_history: dict[str, dict[int, int]] = {}
@@ -202,7 +201,7 @@ class GristScheduler:
 
     async def async_unload_entry(self) -> None:
         """Unload all sub-objects."""
-        logger.debug("Unloading Grid Boost sub-objects")
+        logger.debug("Unloading GRIST sub-objects")
         if self.battery:
             await self.battery.async_unload_entry()
         if self.forecaster:
@@ -286,7 +285,7 @@ class GristScheduler:
             if self.battery is None:
                 logger.warning("Battery not initialized, cannot refresh boost.")
             return
-        adjusted_pv = self.daily.forecast_tomorrow_adjusted
+        adjusted_pv: dict[int, int] = self.daily.forecast_tomorrow_adjusted
             # Debugging, check adjusted_pv to see if it is all zeros
         if not adjusted_pv or all(value == 0 for value in adjusted_pv.values()):
             logger.warning(
@@ -473,11 +472,11 @@ class GristScheduler:
                 boost_actual = int(round(float(boost_actual_state), 0))
             except (ValueError, TypeError):
                 logger.warning(
-                    "Grid boost actual value is invalid, using default value."
+                    "GRIST actual value is invalid, using default value."
                 )
                 boost_actual = DEFAULT_GRIST_STARTING_SOC
         else:
-            logger.warning("Grid boost actual value is None, using default value.")
+            logger.warning("GRIST actual value is None, using default value.")
             boost_actual = DEFAULT_GRIST_STARTING_SOC
 
         remaining_battery_time: int = await self._calculate_remaining_battery_time()

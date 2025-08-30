@@ -1,4 +1,16 @@
-"""Config flow for Grid Boost integration."""
+"""Config flow for GRIST integration.
+
+This module defines the configuration and options flow for the GRIST integration.
+It guides the user through a multi-step setup and options process, using forms and
+confirmation dialogs. User-facing strings (titles, descriptions, field names) are
+defined in the translation file `translations/en.json` and referenced by Home Assistant
+for localization and UI display.
+
+Steps in the flow:
+- User step: Select the boost mode (see "init" in en.json)
+- Confirm step: If disabling boost mode, require explicit confirmation (see "confirm" in en.json)
+- Details step: Configure advanced options (see "details" in en.json)
+"""
 
 from __future__ import annotations
 
@@ -8,7 +20,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.config_entries import OptionsFlow  # Add this import
+from homeassistant.config_entries import OptionsFlow
 from homeassistant.core import callback
 
 from .const import (
@@ -37,7 +49,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def boost_schema(options: dict[str, Any]) -> vol.Schema:
-    """Return the options schema for Grist."""
+    """Return the schema for selecting boost mode.
+
+    UI text is defined in translations/en.json under:
+      - config.step.init.data.boost_mode
+      - config.step.init.data_description.boost_mode
+    """
     return vol.Schema(
         {
             vol.Required(
@@ -50,13 +67,25 @@ def boost_schema(options: dict[str, Any]) -> vol.Schema:
 def confirm_schema(options: dict[str, Any]) -> vol.Schema:
     """Return a schema requiring explicit user confirmation to disable boost mode.
 
+    UI text is defined in translations/en.json under:
+      - config.step.confirm.title
+      - config.step.confirm.description
+      - config.step.confirm.data.confirm
+      - config.step.confirm.data_description.confirm
     The 'confirm' field is a safety confirmation for disabling boost mode, with a default of False.
     """
     return vol.Schema({vol.Required("confirm", default=False): bool})
 
 
 def details_schema(options: dict[str, Any]) -> vol.Schema:
-    """Return the options schema for Grist."""
+    """Return the schema for advanced GRIST options.
+
+    UI text is defined in translations/en.json under:
+      - config.step.details.title
+      - config.step.details.description
+      - config.step.details.data.*
+      - config.step.details.data_description.*
+    """
     return vol.Schema(
         {
             vol.Required("grist_start", default=DEFAULT_GRIST_START): vol.All(
@@ -92,7 +121,10 @@ def details_schema(options: dict[str, Any]) -> vol.Schema:
 
 
 def to_hour(hour: int | None) -> str:
-    """Convert an integer hour (0-23) to a string representation."""
+    """Convert an integer hour (0-23) to a string representation for logging/debug.
+
+    Not used in the UI; for developer logs only.
+    """
     if hour is None:
         return "oops"
     if hour == 0:
@@ -107,7 +139,11 @@ def to_hour(hour: int | None) -> str:
 
 
 class GristConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Grist."""
+    """Handle the config flow for GRIST.
+
+    The flow consists of a single step where the user selects the boost mode.
+    The form fields and descriptions are defined in translations/en.json under config.step.init.
+    """
 
     VERSION = 1
     STEP_USER = "user"
@@ -115,7 +151,10 @@ class GristConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Handle the initial step of the config flow."""
+        """Handle the initial step of the config flow.
+
+        If user_input is provided, create the entry. Otherwise, show the form.
+        """
         if user_input is not None:
             return self.async_create_entry(title=DOMAIN_STR, data=user_input)
         return self.async_show_form(
@@ -128,14 +167,21 @@ class GristConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
-        """Get the options flow for this handler."""
+        """Return the options flow handler for this config entry."""
         return GristOptionsFlow()
 
 
 class GristOptionsFlow(OptionsFlow):
-    """Handle the options flow for Grid Boost."""
+    """Handle the options flow for GRIST.
+
+    This flow allows the user to:
+      1. Select boost mode (init step, see options.step.init in en.json)
+      2. Confirm disabling boost mode (confirm step, see options.step.confirm)
+      3. Set advanced options (details step, see options.step.details)
+    """
 
     def __init__(self) -> None:
+        """Initialize the options flow."""
         self._pending_user_options: dict[str, Any] = {}
 
     @property
@@ -146,7 +192,10 @@ class GristOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Start the options flow by asking for the boost mode."""
+        """Start the options flow by asking for the boost mode.
+
+        If boost_mode is set to 'off', require confirmation before proceeding.
+        """
         if user_input is None:
             return self.async_show_form(
                 step_id="init", data_schema=boost_schema(self.options)
@@ -164,7 +213,10 @@ class GristOptionsFlow(OptionsFlow):
     async def async_step_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Handle the confirmation of turning off the boost mode."""
+        """Handle the confirmation of turning off the boost mode.
+
+        This step uses the schema and UI text from options.step.confirm in en.json.
+        """
         if user_input is None:
             return self.async_show_form(
                 step_id="confirm",
@@ -177,19 +229,29 @@ class GristOptionsFlow(OptionsFlow):
     async def async_step_details(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
-        """Handle the details step."""
-        if user_input is None:
-            return self.async_show_form(
-                step_id="details",
-                data_schema=details_schema(self._pending_user_options),
-            )
-        self._pending_user_options.update(user_input)
-        msg = (
-            f"{PURPLE}\n------------------------GRIST options updated with the following settings------------------------"
-            f"\n   Boost_mode: {self._pending_user_options.get('boost_mode')} - Manual SoC: {self._pending_user_options.get('grist_manual')}%% - Minimum SoC: {self._pending_user_options.get('minimum_soc')}%%"
-            f"\n   Boost from: {to_hour(self._pending_user_options.get('grist_start'))} - {to_hour(self._pending_user_options.get('grist_end'))}, fetching forecast at: {to_hour(self._pending_user_options.get('update_hour'))} using {self._pending_user_options.get('history_days')} days of load history"
-            f"\n-------------------------------------------------------------------------------------------------{RESET}"
-        )
-        _LOGGER.debug(msg)
+        """Handle the details step for advanced options.
 
-        return self.async_create_entry(data=self._pending_user_options)
+        This step uses the schema and UI text from options.step.details in en.json.
+        """
+        errors = {}
+        if user_input is not None:
+            grist_start = user_input.get("grist_start")
+            grist_end = user_input.get("grist_end")
+            if (
+                grist_start is not None
+                and grist_end is not None
+                and grist_start >= grist_end
+            ):
+                errors["grist_start"] = "start_must_be_before_end"
+            else:
+                self._pending_user_options.update(user_input)
+                _LOGGER.debug(
+                    "GRIST options updated with %s", self._pending_user_options
+                )
+                return self.async_create_entry(data=self._pending_user_options)
+
+        return self.async_show_form(
+            step_id="details",
+            data_schema=details_schema(self._pending_user_options),
+            errors=errors,
+        )

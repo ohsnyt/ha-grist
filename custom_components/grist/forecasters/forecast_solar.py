@@ -1,4 +1,26 @@
-"""Forecast Solar integration utilities for Home Assistant."""
+"""Forecast Solar integration utilities for Home Assistant.
+
+This module provides the ForecastSolar class, which manages the retrieval, storage,
+and processing of solar PV forecast data from the Forecast.Solar API for use in the
+Grist integration. It supports multiple panel configurations, handles API rate limits,
+and provides mock data for testing and development.
+
+Key Features:
+- Fetches and aggregates hourly PV forecasts for all configured solar panels.
+- Stores and loads forecast data using Home Assistant's async storage helpers.
+- Handles API rate limiting and provides mock data for development/testing.
+- Provides methods to access forecasts for specific dates and all available data.
+- Cleans up outdated forecast data based on a configurable retention period.
+
+Classes:
+    ForecastSolar: Manages Forecast.Solar API data, storage, and access for Grist.
+
+Functions:
+    generate_day_data: Generates mock hourly PV data for a given day based on sunrise and sunset times.
+
+All I/O is asynchronous and compatible with Home Assistant's async patterns.
+Logging follows Home Assistant conventions and respects the DEBUGGING flag.
+"""
 
 from datetime import datetime, timedelta
 import json
@@ -14,7 +36,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import (
+from ..const import (  # noqa: TID252
     CORE_CONFIG_STORAGE,
     CORE_ENERGY_STORAGE,
     CORE_FORECAST_FILTER,
@@ -41,14 +63,21 @@ USE_MOCK_DATA = False
 class ForecastSolar:
     """Utility class for managing and updating Forecast Solar data in Home Assistant.
 
-    Forecast.solar allows for multiple solar panel configurations, each with its own latitude, longitude, declination, azimuth, and kilowatt peak (kwp) rating. We have to account for this as well as the user's location and the current weather conditions when generating forecasts.
+    Handles multiple solar panel configurations, aggregates hourly forecasts,
+    manages storage, and provides access to forecast data for the Grist integration.
     """
 
     # Constructor for ForecastSolar class.
     def __init__(
         self, hass: HomeAssistant, update_hour: int = DEFAULT_UPDATE_HOUR
     ) -> None:
-        """Initialize ForecastSolar with Home Assistant instance and update hour."""
+        """Initialize ForecastSolar with Home Assistant instance and update hour.
+
+        Args:
+            hass: The Home Assistant instance.
+            update_hour: The hour of day to update the forecast (default: from const.py).
+
+        """
         # General info
         self.hass = hass
         self.timezone: str = hass.config.time_zone
@@ -65,7 +94,11 @@ class ForecastSolar:
         self._store = Store(hass, STORAGE_VERSION, FORECAST_KEY)
 
     async def async_initialize(self) -> None:
-        """Load forecast data from storage."""
+        """Load forecast data from storage.
+
+        Loads previously saved forecast data and next update time from Home Assistant's
+        storage. Converts stored hour keys to integers for internal use.
+        """
         stored_data = await self._store.async_load()
         # return
         if stored_data is not None:
@@ -87,7 +120,12 @@ class ForecastSolar:
             logger.debug("No forecast data found in storage, starting fresh")
 
     async def update_data(self) -> None:
-        """Fetch and process data from Home Assistant sensors."""
+        """Fetch and process data from Home Assistant sensors and Forecast.Solar API.
+
+        If the next update time has passed, fetches new forecast data for all configured
+        panels, aggregates the results, and saves them to storage. Removes outdated
+        forecasts and updates the integration status.
+        """
         if self._next_update < dt_util.now():
             await self._get_new_data_from_forecasts_solar_api()
 
@@ -118,7 +156,15 @@ class ForecastSolar:
         self._status = Status.NORMAL
 
     async def _get_sum_sensors(self, sensor_prefix: str) -> float:
-        """Sum and return sensor values."""
+        """Sum and return sensor values for all sensors starting with the given prefix.
+
+        Args:
+            sensor_prefix: The prefix of the sensor entity IDs to sum.
+
+        Returns:
+            The sum of all matching sensor values as a float.
+
+        """
         # Sum the values from all sensors starting with sensor_prefix
         sensor_value = 0.0
         for state in self.hass.states.async_all("sensor"):
@@ -136,7 +182,12 @@ class ForecastSolar:
         return sensor_value
 
     async def _get_new_data_from_forecasts_solar_api(self) -> None:
-        """Fetch and sum forecasts for all panels by hour."""
+        """Fetch and sum forecasts for all panels by hour.
+
+        Retrieves the current list of active solar panels, fetches forecast data for each,
+        and aggregates the hourly results into the internal forecast dictionary.
+        Handles API rate limiting and uses mock data if enabled.
+        """
         # First, get the current list of active solar panels
         self._panel_configurations = await self._fetch_active_panel_data()
 
@@ -173,7 +224,15 @@ class ForecastSolar:
         self._next_update = dt_util.now() + timedelta(hours=1)
 
     async def _call_api_for_one_panel(self, panel: dict) -> dict:
-        """Fetch forecast data for a single panel."""
+        """Fetch forecast data for a single panel from the Forecast.Solar API.
+
+        Args:
+            panel: Dictionary containing panel configuration (lat, lon, dec, az, kwp).
+
+        Returns:
+            The parsed API response as a dictionary, or mock data if enabled or on error.
+
+        """
         url = (
             f"{FORECAST_SOLAR_API_URL}{panel['lat']}/{panel['lon']}/"
             f"{panel['dec']}/{panel['az']}/{panel['kwp']}"
@@ -198,7 +257,15 @@ class ForecastSolar:
             return {}
 
     async def _fetch_active_panel_data(self) -> dict:
-        """Fetch and return active solar panel configuration data from Home Assistant storage."""
+        """Fetch and return active solar panel configuration data from Home Assistant storage.
+
+        Reads Home Assistant's config and energy storage files to determine which
+        forecast_solar panels are active and their configuration.
+
+        Returns:
+            Dictionary mapping entry_id to panel configuration.
+
+        """
         # First, get the config entries for forecast_solar from the Home Assistant config_entries json file
         # (This defines the panel characteristics)
         async with await anyio.open_file(
@@ -252,7 +319,15 @@ class ForecastSolar:
         return {entry["entry_id"]: entry for entry in forecast_solar_entries}
 
     async def _generate_mock_data(self) -> dict:
-        """Generate mock forecast.solar API data."""
+        """Generate mock Forecast.Solar API data for development and testing.
+
+        Uses astral to calculate sunrise and sunset times and generates plausible
+        hourly PV data for yesterday, today, and tomorrow.
+
+        Returns:
+            Dictionary in the same format as the Forecast.Solar API response.
+
+        """
         # Inform the user that mock data is being used
         logger.warning("\nUsing mock data for Forecast.Solar API.")
 
@@ -332,7 +407,10 @@ class ForecastSolar:
         }
 
     def _remove_old_forecasts(self) -> None:
-        """Remove old forecast data from the forecast history."""
+        """Remove old forecast data from the forecast history.
+
+        Keeps only forecasts within the configured retention period (DEFAULT_PV_MAX_DAYS).
+        """
         cutoff = dt_util.now().date() + timedelta(days=-DEFAULT_PV_MAX_DAYS)
         self._forecast = {
             date: data
@@ -342,19 +420,27 @@ class ForecastSolar:
         }
 
     async def async_unload_entry(self) -> None:
-        """Clean up resources."""
+        """Clean up resources and listeners for ForecastSolar."""
         if self._unsub_update:
             self._unsub_update()
             self._unsub_update = None
         logger.debug("Unloaded Forecast_Solar")
 
     def forecast_for_date(self, date: str) -> dict[int, int]:
-        """Return the forecast for a specific date."""
+        """Return the forecast for a specific date.
+
+        Args:
+            date: Date string in YYYY-MM-DD format.
+
+        Returns:
+            Dictionary mapping hour to forecasted PV for the given date.
+
+        """
         return self._forecast.get(date, {})
 
     @property
     def forecast(self) -> dict[str, dict[int, int]]:
-        """Return PV for the future."""
+        """Return PV forecasts for today and future dates only."""
         cutoff = dt_util.now().date()
         return {
             date: data
@@ -365,28 +451,40 @@ class ForecastSolar:
 
     @property
     def all_forecasts(self) -> dict[str, dict[int, int]]:
-        """Return all PV forecasts."""
+        """Return all PV forecasts, including past dates."""
         return self._forecast
 
     @property
     def next_update(self) -> datetime | None:
-        """Return the next update time."""
+        """Return the next scheduled update time."""
         return self._next_update
 
     @property
     def status(self) -> Status:
-        """Return the current status of the Solcast integration."""
+        """Return the current status of the ForecastSolar integration."""
         return self._status
 
 
 def generate_day_data(sunrise, sunset) -> dict:
-    """Generate mock data for a given day."""
-    DATE_FORMAT_MOCK = "%Y-%m-%d %H:%M:%S"
+    """Generate mock hourly PV data for a given day.
+
+    Simulates PV generation for each hour between sunrise and sunset, with a
+    bell-shaped curve peaking at midday. Used for mock data and testing.
+
+    Args:
+        sunrise: Sunrise datetime for the day.
+        sunset: Sunset datetime for the day.
+
+    Returns:
+        Dictionary mapping datetime strings to simulated watt-hour values.
+
+    """
+    MOCK_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
     data: dict[str, int] = {}
     pre_sunrise = sunrise - timedelta(minutes=1)
     current_time = sunrise
     # Add the pre-sunrise data
-    data[pre_sunrise.strftime(DATE_FORMAT_MOCK)] = 0
+    data[pre_sunrise.strftime(MOCK_DATE_FORMAT)] = 0
     # Add the first hour partial data
     next_hour = current_time.replace(minute=0, second=0, microsecond=0) + timedelta(
         minutes=60
@@ -395,7 +493,7 @@ def generate_day_data(sunrise, sunset) -> dict:
     middle_hour: int = (sunset.hour - sunrise.hour - 2) / 2
     start_hour = sunrise.hour + 1
     watt_hours: int = int(750 * minutes / 60)
-    data[current_time.strftime(DATE_FORMAT_MOCK)] = watt_hours
+    data[current_time.strftime(MOCK_DATE_FORMAT)] = watt_hours
     current_time = current_time.replace(
         hour=start_hour, minute=0, second=0, microsecond=0
     )
@@ -404,10 +502,10 @@ def generate_day_data(sunrise, sunset) -> dict:
             (middle_hour + 1) * 750
             - abs((current_time.hour - start_hour) - middle_hour) * 750
         )
-        data[current_time.strftime(DATE_FORMAT_MOCK)] = watt_hours
+        data[current_time.strftime(MOCK_DATE_FORMAT)] = watt_hours
         current_time += timedelta(minutes=60)  # Increment time in 30-minute intervals
     # Add the last value at sunset
     minutes = (sunset - current_time).seconds // 60
     watt_hours: int = int(750 * minutes / 60)
-    data[sunset.strftime(DATE_FORMAT_MOCK)] = watt_hours
+    data[sunset.strftime(MOCK_DATE_FORMAT)] = watt_hours
     return data

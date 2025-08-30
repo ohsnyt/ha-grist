@@ -8,22 +8,21 @@ The **Grid Boost Scheduler** custom component helps Home Assistant users minimiz
 
 ## Bronze
 
-- **action-setup**:
- This integration does not expose any user-triggerable actions; all actions are handled internally based on configuration options.
+- **action-setup**: Done. This integration does not expose any user-triggerable actions; all actions are handled internally based on configuration options.
 
 - **brands**: *todo*
 
-- **common-modules**: I have functions that are similar to the build-in functions, but provide error checking and default values. The prevents the need to duplicate error checking when those functions are used in different places in my code. For example, I have a helper function called get_state which returns the state of an entity (as opposed to the entity with the associated state, attributes, etc.). If the entity is not present or fails in some way, this helper function manages those error conditions.
+- **common-modules**: Done. I have functions that are similar to the build-in functions, but provide error checking and default values. The prevents the need to duplicate error checking when those functions are used in different places in my code. For example, I have a helper function called get_state which returns the state of an entity (as opposed to the entity with the associated state, attributes, etc.). If the entity is not present or fails in some way, this helper function manages those error conditions.
 
-- **config-flow**: done
+- **config-flow**: Done.
 
 - **config-flow-test-coverage**: *todo* (having trouble getting pytest to run in my docker instance. Will have to try again with a new instance.)
 
-- **dependency-transparency**: This integration is dependant upon the home assistant statistics recorder as well as MQTT integration. It further depends upon Solar Assistant, an external hardware/software system to supply sensor information necessary for this integration. Also required is one of three other integrations to supply solar forcast information**: Solcast, Meteo or Forecast.Solar. See the documentation for details.
+- **dependency-transparency**: Done. This integration is dependant upon the home assistant statistics recorder as well as MQTT integration. It further depends upon Solar Assistant, an external hardware/software system to supply sensor information necessary for this integration. Also required is one of three other integrations to supply solar forcast information**: Solcast, Meteo or Forecast.Solar. See the documentation for details.
 
-- **docs-actions**: This integration does not expose any user-triggerable actions; all actions are handled internally based on configuration options.
+- **docs-actions**: Done. This integration does not expose any user-triggerable actions; all actions are handled internally based on configuration options.
 
-- **docs-high-level-description**: done
+- **docs-high-level-description**: Done.
 
 - **docs-installation-instructions**: *todo*
 
@@ -31,22 +30,22 @@ The **Grid Boost Scheduler** custom component helps Home Assistant users minimiz
 
 - **entity-event-setup**: n/a (The integration does gather information from recorder statistics and from other sensor data, but it does not listen for events.)
 
-- **entity-unique-id**: done
+- **entity-unique-id**: Done.
 
-- **has-entity-name**: done
+- **has-entity-name**: Done.
 
-- **runtime-data**: The integration stores forecast data in the hass storage using the keys found in constants as FORECAST_KEY, and STORAGE_VERSION. Of course hass also stores integration information and options during the initialization and config_flow_options routines.
+- **runtime-data**: Done. The integration stores forecast data in the hass storage using the keys found in constants as FORECAST_KEY, and STORAGE_VERSION. Of course hass also stores integration information and options during the initialization and config_flow_options routines.
 
-- **test-before-configure**: The integration supplies default values for all items that can be configured. This ensures that the integration will behave correctly before it is configured. In addition, the integration tests for the presense of a valid solar forcaster prior to running any function, method or calculation that depends on data from a forecaster.
+- **test-before-configure**: Done. The integration supplies default values for all items that can be configured. This ensures that the integration will behave correctly before it is configured. In addition, the integration tests for the presense of a valid solar forcaster prior to running any function, method or calculation that depends on data from a forecaster.
 
-- **test-before-setup**: See test-before-configure.
+- **test-before-setup**: Done. See test-before-configure.
 
 - **unique-config-entry**: This entity is a singe-instance integration and follows the idiomatic and correct method to ensure that. Testing is incorporated. **But I am still waiting to figure out how to run pytest for home assistant within docker.**
 
 ## Silver
 
 - **action-exceptions**: n/a. No exposed actions.
-- **config-entry-unloading**: Unloading is done. Since there are no listeners, no further checks are needed. Testing is incorporated. **But I am still waiting to figure out how to run pytest for home assistant within docker.**
+- **config-entry-unloading**: Done. Unloading is done. Since there are no listeners, no further checks are needed. Testing is incorporated. **But I am still waiting to figure out how to run pytest for home assistant within docker.**
 - **docs-configuration-parameters**: *todo*
 - What:
 Document all configuration parameters (options, YAML, UI) your integration supports.
@@ -72,7 +71,7 @@ How:
 Implement the available property for your entities.
 Add tests that simulate unavailable conditions and assert that available is False and the entity state is handled as expected.
 
-- **integration-owner**: Done
+- **integration-owner**: Done.
 - **log-when-unavailable**: *todo*
 - What:
 Log a debug or warning message when an entity becomes unavailable.

@@ -1,4 +1,27 @@
-"""Sensor platform for the GRIST integration."""
+"""Sensor platform for the GRIST integration.
+
+Defines sensor entities for the GRIST Scheduler integration in Home Assistant.
+This module sets up both custom entity classes (for scheduler state, PV ratios, load, etc.)
+and standard sensors (for PV forecasts, grid boost settings, and battery statistics).
+All sensors use the update coordinator pattern for efficient polling and state updates.
+
+Key Features:
+- Registers custom entities for scheduler status, PV ratios, load, battery life, and chart data.
+- Registers standard sensors for PV forecasts, grid boost settings, and battery time remaining.
+- Ensures unique IDs for all sensors using the config entry ID.
+- All sensors expose extra state attributes and device info for Home Assistant dashboards.
+- Follows Home Assistant async setup and teardown patterns.
+
+Classes:
+    OhSnytSensorEntityDescription: Describes a GRIST sensor entity.
+    OhSnytSensor: Standard sensor entity for GRIST Scheduler.
+
+Functions:
+    async_setup_entry: Set up all GRIST sensors for a config entry.
+    async_unload_entry: Unload all GRIST sensors for a config entry.
+
+All I/O is asynchronous and compatible with Home Assistant's async patterns.
+"""
 
 import logging
 
@@ -11,7 +34,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfPower
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo  # Correct import
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import generate_entity_id
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -36,11 +59,10 @@ else:
 
 
 class OhSnytSensorEntityDescription(SensorEntityDescription):
-    """Describes a sensor."""
+    """Describes a GRIST sensor entity."""
 
 
 GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
-    # Forecasted PV power related sensors.
     "pv_today_total": OhSnytSensorEntityDescription(
         key="pv_today_total",
         icon="mdi:flash",
@@ -59,7 +81,6 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
     ),
-    # Grid boost related sensors.
     "calculated_boost": OhSnytSensorEntityDescription(
         key="calculated_boost",
         icon="mdi:battery",
@@ -87,7 +108,6 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
     ),
-    # Battery related sensors.
     "battery_time_remaining": OhSnytSensorEntityDescription(
         key="battery_time_remaining",
         icon="mdi:timer-outline",
@@ -99,22 +119,25 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
     ),
 }
 
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up individual sensors."""
+    """Set up GRIST sensors for a config entry.
 
+    Registers both custom entity classes (for scheduler, PV, load, etc.)
+    and standard sensors (for PV forecasts, grid boost, battery) with Home Assistant.
+    """
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    # Double check that we have data
     if coordinator is None:
         logger.error("Coordinator is missing from hass.data")
         return
 
     unique_prefix = entry.entry_id
 
-    # Add special entity sensors: Scheduler, Battery, Cloud, Plant, PV Ratio and Load (from entity.py)
+    # Add custom entity sensors from entity.py
     entity_list = [
         SchedulerEntity,
         ApexChartEntity,
@@ -130,7 +153,7 @@ async def async_setup_entry(
     ]
     async_add_entities(entities)
 
-    # Add the "normal" Sol-Ark sensors for the inverter (from this file)
+    # Add standard sensors defined in this file
     sensors = [
         OhSnytSensor(
             entry_id=unique_prefix,
@@ -141,6 +164,7 @@ async def async_setup_entry(
     ]
     async_add_entities(sensors)
 
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload sensor platform for GRIST Scheduler."""
     logger.debug("Unloaded GRIST sensors for entry: %s", entry.entry_id)
@@ -148,9 +172,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 class OhSnytSensor(CoordinatorEntity[GristUpdateCoordinator], SensorEntity):
-    """Representation of a standard sensor."""
-
-    # has_entity_name = False  # Prevent Home Assistant from generating a friendly name
+    """Representation of a standard GRIST sensor."""
 
     def __init__(
         self,
@@ -159,12 +181,14 @@ class OhSnytSensor(CoordinatorEntity[GristUpdateCoordinator], SensorEntity):
         coordinator: GristUpdateCoordinator,
         description: OhSnytSensorEntityDescription,
     ) -> None:
-        """Initialize the sensor."""
+        """Initialize the sensor entity."""
         super().__init__(coordinator)
         self.entity_description = description
         self._key = description.key
         self._attr_unique_id = f"{DOMAIN}_{description.key}"
-        self.entity_id = generate_entity_id("sensor.{}", self._attr_unique_id, hass=coordinator.hass)
+        self.entity_id = generate_entity_id(
+            "sensor.{}", self._attr_unique_id, hass=coordinator.hass
+        )
         icon = description.icon if isinstance(description.icon, str) else "mdi:flash"
         self._attr_icon = icon
         name = description.name if isinstance(description.name, str) else "Unknown"
@@ -188,7 +212,7 @@ class OhSnytSensor(CoordinatorEntity[GristUpdateCoordinator], SensorEntity):
 
     @property
     def unique_id(self) -> str | None:
-        """Return a unique ID."""
+        """Return a unique ID for the sensor."""
         return self._attr_unique_id
 
     @property
@@ -202,12 +226,12 @@ class OhSnytSensor(CoordinatorEntity[GristUpdateCoordinator], SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo | None:
-        """Return the device info."""
+        """Return the device info for the sensor."""
         return self._attr_device_info
 
     @property
     def state(self) -> str | int | float | None:
-        """Return the state of the sensor."""
+        """Return the state of the sensor (legacy property)."""
         value = self.coordinator.data.get(self.entity_description.key)
         if not isinstance(value, (int, float, type(None))):
             logger.error("Invalid type for state: %s (%s)", value, type(value))

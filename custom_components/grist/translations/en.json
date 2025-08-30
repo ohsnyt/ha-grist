@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "init": {
-        "title": "Grid Boost Options",
-        "description": "Adjust your Grid Boost integration settings.",
+        "title": "GRIST Options",
+        "description": "Adjust your GRIST integration settings.",
         "data": {
           "boost_mode": "Boost Mode"
         },
@@ -22,8 +22,8 @@
         }
       },
       "details": {
-        "title": "Grid Boost Details",
-        "description": "Set advanced options for Grid Boost.",
+        "title": "GRIST Details",
+        "description": "Set advanced options for GRIST.",
         "data": {
           "grist_start": "Grid Boost Start Hour",
           "grist_end": "Grid Boost End Hour",
@@ -34,20 +34,23 @@
         },
         "data_description": {
           "grist_start": "Hour to start grid boost (0-23).",
-          "grist_end": "Hour to end grid boost (0-23).",
+          "grist_end": "Hour to end grid boost (0-23), but must be after the start hour.",
           "update_hour": "Hour of day to update grid boost schedule.",
           "history_days": "Number of days to use for load average.",
           "minimum_soc": "Minimum battery state of charge as a percentage.",
           "grist_manual": "Set the manual grid boost value as a percentage."
         }
       }
+    },
+    "error": {
+      "start_must_be_before_end": "Grid Boost Start Hour must be earlier than Grid Boost End Hour."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Grid Boost Options",
-        "description": "Adjust your Grid Boost integration settings.",
+        "title": "GRIST Options",
+        "description": "Adjust your GRIST integration settings.",
         "data": {
           "boost_mode": "Boost Mode"
         },
@@ -66,8 +69,8 @@
         }
       },
       "details": {
-        "title": "Grid Boost Details",
-        "description": "Set advanced options for Grid Boost.",
+        "title": "GRIST Details",
+        "description": "Set advanced options for GRIST.",
         "data": {
           "grist_start": "Grid Boost Start Hour",
           "grist_end": "Grid Boost End Hour",
@@ -78,13 +81,16 @@
         },
         "data_description": {
           "grist_start": "Hour to start grid boost (0-23).",
-          "grist_end": "Hour to end grid boost (0-23).",
+          "grist_end": "Hour to end grid boost (0-23, but must be after the start hour).",
           "update_hour": "Hour of day to update grid boost schedule.",
           "history_days": "Number of days to use for load average.",
           "minimum_soc": "Minimum battery state of charge as a percentage.",
           "grist_manual": "Set the manual grid boost value as a percentage."
         }
       }
+    },
+    "error": {
+      "start_must_be_before_end": "Grid Boost Start Hour must be earlier than Grid Boost End Hour."
     }
   }
 }

@@ -1,4 +1,17 @@
-"""Boost calculation utilities for grist integration."""
+"""Boost calculation utilities for the Grist integration.
+
+This module provides functions to calculate the required grid boost for the next day,
+based on battery capacity, efficiency, minimum state of charge (SoC), adjusted PV forecast,
+and average hourly load. The calculation ensures the battery does not drop below the
+configured minimum SoC during the boost window.
+
+Functions:
+    calculate_required_boost: Calculates the required boost percentage for the battery
+        to maintain the minimum SoC, given PV and load forecasts.
+
+Constants and configuration are imported from .const. All logging is performed using
+Home Assistant's logging conventions.
+"""
 
 import logging
 import math
@@ -12,16 +25,37 @@ logger.setLevel(logging.DEBUG if DEBUGGING else logging.INFO)
 
 
 def calculate_required_boost(
-    battery_max_wh, efficiency, minimum_soc, adjusted_pv, average_hourly_load
+    battery_max_wh: float,
+    efficiency: float,
+    minimum_soc: float,
+    adjusted_pv: dict[int, int],
+    average_hourly_load: dict[int, int],
 ) -> float | None:
-    """Calculate required boost for tomorrow."""
-    # Debugging, check adjusted_pv to see if it is all zeros
+    """Calculate the required boost percentage for tomorrow.
+
+    This function determines the minimum battery state of charge (SoC) needed at the
+    start of the boost window to ensure the battery does not drop below the configured
+    minimum SoC, given the PV forecast and average hourly load.
+
+    Args:
+        battery_max_wh: The maximum battery capacity in watt-hours.
+        efficiency: The battery round-trip efficiency as a percentage (0-100).
+        minimum_soc: The minimum allowed state of charge as a percentage (0-100).
+        adjusted_pv: A mapping of hour (int, 6-23) to forecasted PV generation (Wh).
+        average_hourly_load: A mapping of hour (int, 6-23) to average load (Wh).
+
+    Returns:
+        The required SoC percentage (0-99) to start the day, or None if calculation
+        is skipped due to missing or invalid data.
+
+    """
+    # Debugging: check if adjusted_pv is empty or all zeros
     if not adjusted_pv or all(value == 0 for value in adjusted_pv.values()):
         logger.warning(
             "Adjusted PV data is empty or all zeros, skipping boost calculation"
         )
         return None
-    # Only do this after the configured hour
+    # Only perform calculation after the configured hour
     if dt_util.now().hour < DEFAULT_DONT_BOOST_BEFORE:
         if DEFAULT_DONT_BOOST_BEFORE == 0:
             am_pm_time = "midnight"

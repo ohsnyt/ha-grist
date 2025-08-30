@@ -1,23 +1,32 @@
-"""Classes for integration with Meteo HACS to supply forecast info to Grid Boost Scheduler.
+"""Meteo integration for GRIST Scheduler.
 
-Placeholder - to be developed.
+Provides the Meteo class for interfacing with the Meteo HACS integration to supply
+hourly photovoltaic (PV) forecast data to the GRIST Scheduler. This module loads,
+parses, and maintains forecast data from Home Assistant sensors, supporting both
+storage and live updates. It also exposes the integration status and next update time.
 
+Key Features:
+- Loads and stores hourly PV forecast data for multiple days from Home Assistant sensors.
+- Parses detailed hourly forecast data from Meteo sensor attributes.
+- Removes outdated forecast data based on a configurable retention period.
+- Exposes forecast data for specific dates and all available data.
+- Tracks integration status and next scheduled update time.
+- Designed for async operation and compatibility with Home Assistant's async patterns.
 
-This module contains two public properties:
-    1) forecast: This will return a dictionary with the PV forecast as dict[str, dict[int, int]] where the key is the time in the form of YYYY-MM-DD, the forecast data is a dict of hour, value containing the predicted energy in watt-hours for each hour of the day.
-    3) status: This will return the current status of the Meteo integration, which can be one of the following:
-        - Status.NOT_CONFIGURED: The integration is not configured.
-        - Status.FAULT: There was an error retrieving the forecast data.
-        - Status.NORMAL: The integration is configured and working correctly.
+Classes:
+    Meteo: Manages Meteo PV forecast data, storage, and access for GRIST Scheduler.
 
-To call the module, you need to create an instance of the Meteo class with the Home Assistant object as the argument. For example:
-    forecaster = Meteo(hass)
+Functions:
+    forecast_for_date: Returns the forecast for a specific date.
+    async_initialize: Loads forecast data from storage.
+    update_data: Updates forecast data from Home Assistant sensors.
+    async_unload_entry: Cleans up resources and listeners.
+    status: Returns the current status of the Meteo integration.
 
-NOTE: Key sensors with Meteo integration:
-    sensor.meteo_pv_forecast_forecast_tomorrow: This sensor provides the forecast for tomorrow in kWh.
-    sensor.meteo_pv_forecast_api_last_polled.next_auto_update: This sensor provides
-        the next time the Meteo API will be polled for updates.
-
+Usage:
+    Instantiate Meteo with a Home Assistant instance and call async_initialize()
+    to load stored data. Use update_data() to refresh forecasts from sensors.
+    Access forecasts via the forecast or all_forecasts properties.
 """
 
 import asyncio
@@ -28,7 +37,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import (
+from ..const import (  # noqa: TID252
     DEBUGGING,
     DEFAULT_PV_MAX_DAYS,
     FORECAST_KEY,
@@ -38,38 +47,46 @@ from .const import (
     STORAGE_VERSION,
     Status,
 )
-from .hass_utilities import find_entities_by_prefixes, get_entity
+from ..hass_utilities import find_entities_by_prefixes, get_entity  # noqa: TID252
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG if DEBUGGING else logging.INFO)
 
 
 class Meteo:
-    """Class to interface between the Grid Boost Scheduler and the Meteo integration."""
+    """Interface between the GRIST Scheduler and the Meteo HACS integration.
 
-    # Constructor
+    Handles loading, updating, and parsing of hourly PV forecast data from Meteo sensors.
+    Maintains forecast data for multiple days and exposes integration status and next update time.
+    """
+
     def __init__(
         self,
         hass: HomeAssistant,
     ) -> None:
-        """Initialize key variables."""
+        """Initialize Meteo integration variables and storage.
 
-        # General info
+        Args:
+            hass: The Home Assistant instance.
+
+        """
         self.hass = hass
         self._status = Status.NOT_CONFIGURED
         self._next_update = dt_util.now() + timedelta(minutes=-1)
         self._forecast: dict[str, dict[int, int]] = {}
         self._unsub_update = None
-        # Initialize storage
         self._store = Store(hass, STORAGE_VERSION, FORECAST_KEY)
 
     async def async_initialize(self) -> None:
-        """Load forecast data from storage."""
+        """Load forecast data from storage.
+
+        Loads previously saved forecast data and next update time from Home Assistant's
+        storage. Converts stored hour keys to integers for internal use. If no data is
+        found, triggers an initial update from sensors.
+        """
         stored_data = await self._store.async_load()
-        # return
         if stored_data is not None:
             temp = stored_data.get("forecast", {})
-            # Convert keys from str to int for each day's forecast data
             self._forecast = {
                 date: {int(hour): value for hour, value in day_data.items()}
                 for date, day_data in temp.items()
@@ -87,16 +104,20 @@ class Meteo:
             await self.update_data()
 
     async def async_unload_entry(self) -> None:
-        """Clean up resources."""
+        """Clean up resources and listeners for the Meteo integration."""
         if self._unsub_update:
             self._unsub_update()
             self._unsub_update = None
         logger.debug("Unloaded Meteo")
 
     async def update_data(self) -> None:
-        """Update the Meteo data."""
-        forecast_prefixes = [SENSOR_METEO_BASE]
+        """Update the Meteo forecast data from Home Assistant sensors.
 
+        Finds all Meteo forecast sensors, processes each one concurrently to extract
+        hourly forecast data, and updates the internal forecast dictionary. Removes
+        outdated forecasts and updates the integration status.
+        """
+        forecast_prefixes = [SENSOR_METEO_BASE]
         forecast_days_ids = await find_entities_by_prefixes(
             self.hass, forecast_prefixes
         )
@@ -105,7 +126,6 @@ class Meteo:
             self._status = Status.FAULT
             return
 
-        # Process each forecast day concurrently
         results = await asyncio.gather(
             *(self._process_forecast_day(day) for day in forecast_days_ids),
             return_exceptions=True,
@@ -125,7 +145,15 @@ class Meteo:
         )
 
     async def _process_forecast_day(self, entity_id: str) -> bool:
-        """Process a single forecast day."""
+        """Process a single Meteo forecast day sensor.
+
+        Args:
+            entity_id: The entity ID of the Meteo forecast sensor.
+
+        Returns:
+            True if processing was successful, False otherwise.
+
+        """
         result = await get_entity(hass=self.hass, entity_id=entity_id)
         if not result:
             logger.error("No Meteo forecast data found for %s", entity_id)
@@ -159,31 +187,29 @@ class Meteo:
     async def _parse_detailed_hourly(
         self, detailed_hourly: dict[str, float]
     ) -> tuple[str | None, dict[int, int]]:
-        """Parse detailed hourly forecast data.
+        """Parse detailed hourly forecast data from Meteo sensor attributes.
 
         Args:
             detailed_hourly: A dict with ISO datetime strings as keys and float values for each hour.
 
         Returns:
             A tuple of (date as 'YYYY-MM-DD', {hour: value}) or (None, {}) if input is empty.
-
         """
         if not detailed_hourly:
             return None, {}
 
-        # Get the date string from the first key
         first_key = next(iter(detailed_hourly))
         date_str = first_key[:10]
-
-        # Build the hourly forecast dict
         hourly_forecast = {
             int(key[11:13]): int(value) for key, value in detailed_hourly.items()
         }
-
         return date_str, hourly_forecast
 
     def _remove_old_forecasts(self) -> None:
-        """Remove old forecast data from the forecast history."""
+        """Remove old forecast data from the forecast history.
+
+        Keeps only forecasts within the configured retention period (DEFAULT_PV_MAX_DAYS).
+        """
         cutoff = dt_util.now().date() + timedelta(days=-DEFAULT_PV_MAX_DAYS)
         self._forecast = {
             date: data
@@ -193,19 +219,27 @@ class Meteo:
         }
 
     async def async_unload(self) -> None:
-        """Clean up resources."""
+        """Clean up resources and unschedule periodic updates."""
         if self._unsub_update:
             self._unsub_update()
             self._unsub_update = None
         logger.debug("Unscheduled periodic updates")
 
     def forecast_for_date(self, date: str) -> dict[int, int]:
-        """Return the forecast for a specific date."""
+        """Return the forecast for a specific date.
+
+        Args:
+            date: Date string in 'YYYY-MM-DD' format.
+
+        Returns:
+            Dictionary mapping hour to forecasted PV for the given date.
+
+        """
         return self._forecast.get(date, {})
 
     @property
     def forecast(self) -> dict[str, dict[int, int]]:
-        """Return PV for the future."""
+        """Return PV forecasts for future dates only."""
         cutoff = dt_util.now().date()
         return {
             date: data
@@ -216,15 +250,15 @@ class Meteo:
 
     @property
     def all_forecasts(self) -> dict[str, dict[int, int]]:
-        """Return all PV forecasts."""
+        """Return all PV forecasts, including past dates."""
         return self._forecast
 
     @property
     def next_update(self) -> datetime:
-        """Return the next update time."""
+        """Return the next scheduled update time."""
         return self._next_update
 
     @property
     def status(self) -> Status:
-        """Return the current status of the Solcast integration."""
+        """Return the current status of the Meteo integration."""
         return self._status

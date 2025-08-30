@@ -1,13 +1,27 @@
-"""Entity classes for GRIST, a Grid Boost Scheduler.
+"""Entities for the GRIST Scheduler integration.
 
-This module defines various entity classes used in GRIST.
-Each entity class represents a different aspect of the GRIST Scheduler that may be of special interest to the user:
-    the GRIST overview,
-    the calculated average daily load,
-    the state of the battery,
-    the calculated PV ratio, and
-    various estimated PV forecasts (adjusted by the ratio).
-There is also a special entity to provide information in a form that can be shown with an Apex Chart dashboard card. This will require some user customization.
+Defines entity classes for representing the state and statistics of the GRIST Scheduler
+in Home Assistant. These entities expose calculated and forecasted data such as
+scheduler status, PV performance ratios, average hourly load, PV forecasts, battery
+life estimates, and chart data for dashboards.
+
+All entities use the update coordinator pattern for efficient polling and state updates.
+Each entity exposes extra state attributes for use in dashboards and automations.
+
+Classes:
+    SchedulerEntity: Represents the overall scheduler state and configuration.
+    RatioEntity: Exposes hourly PV performance ratios.
+    LoadEntity: Exposes average hourly load.
+    PVEntityToday: Exposes calculated PV generation for today.
+    PVEntityTomorrow: Exposes calculated PV generation for tomorrow.
+    BatteryLifeEntity: Estimates the time when the battery will be exhausted.
+    ApexChartEntity: Provides data for Apex Chart dashboard cards.
+
+Helper Functions:
+    format_hourly_data: Formats hourly data for display or charting.
+    summarize_hourly_data: Summarizes hourly data for quick statistics.
+
+All I/O is asynchronous and compatible with Home Assistant's async patterns.
 """
 
 from datetime import datetime, timedelta
@@ -22,16 +36,12 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import DEBUGGING, DOMAIN, Status
+from .const import DEBUGGING, DOMAIN, NBSP, Status
 
 logger = logging.getLogger(__name__)
-if DEBUGGING:
-    logger.setLevel(logging.DEBUG)
-else:
-    logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG if DEBUGGING else logging.INFO)
 
 
-# Helper functions
 def printable_hour(hour: int) -> str:
     """Return a printable hour string in 12-hour format with 'am' or 'pm' suffix.
 
@@ -42,73 +52,62 @@ def printable_hour(hour: int) -> str:
         Formatted string in 12-hour format with am/pm.
 
     """
-    thehour = hour % 12 if hour > 0 else 12  # Convert 0 to 12 for midnight
-    return f"{'\u00a0\u00a0' if thehour < 10 else ''}{thehour} {'am' if hour < 12 else 'pm'}"
+    thehour = hour % 12 if hour > 0 else 12
+    return f"{NBSP * 2 if thehour < 10 else ''}{thehour} {'am' if hour < 12 else 'pm'}"
 
 
 def count_data(input_str: str) -> int:
-    """Convert a string representation of a dictionary to an actual dictionary.
+    """Count the number of dictionary values greater than zero in a string representation.
 
     Args:
         input_str: String representation of a dictionary.
 
     Returns:
-        A dictionary with integer keys and float values.
+        The count of values greater than zero.
 
     """
-    # Remove the curly braces
     input_str = input_str.strip("{}")
-    # Split the string into key-value pairs
     pairs = re.split(r",\s*(?![^{}]*\})", input_str)
     result = 0
     if pairs == [""]:
         return result
     for pair in pairs:
-        # Split each pair into key and value
-        key, value = pair.split(":")
-        # Convert key and value to appropriate types and add to the dictionary
+        _, value = pair.split(":")
         if float(value.strip()) > 0.0:
             result += 1
     return result
 
 
 def sum_data(input_str: str) -> int:
-    """Convert a string representation of a dictionary to an actual dictionary.
+    """Sum the values in a string representation of a dictionary.
 
     Args:
         input_str: String representation of a dictionary.
 
     Returns:
-        A dictionary with integer keys and float values.
+        The sum of all values, rounded to the nearest integer.
 
     """
-    # Remove the curly braces
     input_str = input_str.strip("{}")
-    # Check for empty data
     if input_str == "":
         return 0
-    # Split the string into key-value pairs
     pairs = re.split(r",\s*(?![^{}]*\})", input_str)
     result = 0.0
     for pair in pairs:
-        # Split each pair into key and value
-        key, value = pair.split(":")
-        # Convert key and value to appropriate types and add to the dictionary
+        _, value = pair.split(":")
         result += float(value.strip())
     return int(round(result, 0))
 
 
 class SchedulerEntity(CoordinatorEntity):
-    """Class for Grid Boost entity."""
+    """Entity representing the GRIST scheduler overview and configuration."""
 
     def __init__(
         self,
         entry_id: str,
         coordinator: DataUpdateCoordinator[dict[str, Any]],
-        # parent: str,
     ) -> None:
-        """Initialize the sensor."""
-
+        """Initialize the scheduler entity."""
         super().__init__(coordinator)
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_GRIST_scheduler"
@@ -121,21 +120,10 @@ class SchedulerEntity(CoordinatorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, str]:
-        """Returns a dictionary of extra state attributes for the entity.
+        """Return extra state attributes for the scheduler entity.
 
-        The attributes include:
-            - status: The current status of the coordinator data, or a default status if not configured.
-            - manual: The manual grid boost value, defaulting to 30 if not set.
-            - calculated: The calculated boost value, defaulting to 20 if not set.
-            - min_soc: The minimum state of charge, defaulting to 20 if not set.
-            - load_days: The number of load days, defaulting to 3 if not set.
-            - update_hour: The hour at which updates occur, defaulting to 3 if not set.
-            - forecast_today: A string containing today's day abbreviation and PV calculation for today.
-            - forecast_tomorrow: A string containing tomorrow's day abbreviation and PV calculation for tomorrow.
-
-        Returns:
-            dict[str, str]: A dictionary mapping attribute names to their string values.
-
+        Includes status, manual and calculated boost, minimum SoC, load days,
+        update hour, and PV forecasts for today and tomorrow.
         """
         now = dt_util.now()
         today: str = now.strftime("%a")
@@ -153,41 +141,34 @@ class SchedulerEntity(CoordinatorEntity):
 
     @property
     def name(self) -> str | None:
-        """Return the name of the sensor."""
+        """Return the name of the scheduler entity."""
         return self._attr_name
 
     @property
     def unique_id(self) -> str | None:
-        """Return a unique ID."""
+        """Return a unique ID for the scheduler entity."""
         return self._attr_unique_id
 
     @property
     def state(self) -> str:
-        """Return the state of the sensor."""
+        """Return the current mode of the scheduler."""
         return self.coordinator.data.get("grist_mode", "State unknown")
 
 
 class RatioEntity(CoordinatorEntity):
-    """Representation of a PV Ratio.
-
-    This sensor is used to display the PV ratio for each hour of the day if available. If there is more sun than expected, this sensor will display the ratio as number greater than 1.0. If there is shading for the hour, it will display a number less than 1.0
-    If we are unable to get the PV ratio, the sensor will display "No PV ratios available".
-    """
+    """Entity representing hourly PV performance ratios."""
 
     def __init__(
         self,
         entry_id: str,
         coordinator: DataUpdateCoordinator[dict[str, Any]],
-        # parent: str,
     ) -> None:
-        """Initialize the sensor."""
-
+        """Initialize the PV ratio entity."""
         super().__init__(coordinator)
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_pv_ratio"
         self._attr_icon = "mdi:toggle-switch"
         self._attr_name = "GRIST PV ratio"
-        self._count: int = 0
         self._device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=self._attr_name,
@@ -195,22 +176,22 @@ class RatioEntity(CoordinatorEntity):
 
     @property
     def name(self) -> str | None:
-        """Return the name of the sensor."""
+        """Return the name of the PV ratio entity."""
         return self._attr_name
 
     @property
     def unique_id(self) -> str | None:
-        """Return a unique ID."""
+        """Return a unique ID for the PV ratio entity."""
         return self._attr_unique_id
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return the device info."""
+        """Return the device info for the PV ratio entity."""
         return self._device_info
 
     @property
     def extra_state_attributes(self) -> dict[str, str]:
-        """Return the hourly pv ratio values as dict[str,str]."""
+        """Return hourly PV ratio values as state attributes."""
         hours: dict[int, float] = self._coordinator.data.get("pv_ratios", {})
         converted_hours: dict[str, str] = {
             printable_hour(hour): f"{ratio:>3.1f}" for hour, ratio in hours.items()
@@ -222,36 +203,30 @@ class RatioEntity(CoordinatorEntity):
 
     @property
     def state(self) -> str | int | float | None:
-        """Return the count of hours with ratios < 1.0."""
+        """Return a summary of hours with unique PV ratios."""
         if not self._coordinator.data or "pv_ratios" not in self._coordinator.data:
             return "No PV ratios available"
-        # Count hours with ratios < 1.0
-        count = 0
-        all_hours = self._coordinator.data.get("pv_ratios", {})
-        for ratio in all_hours.values():
-            if ratio < 1.0:
-                count += 1
+        count = sum(
+            1
+            for ratio in self._coordinator.data.get("pv_ratios", {}).values()
+            if ratio != 1.0
+        )
         if count == 1:
-            return "1 hour with shading"
+            return "1 hour with a unique ratio"
         if count > 0:
-            return f"{count} hours with shading"
-        return "No shading found"
+            return f"{count} hours with unique ratios"
+        return "No unique ratios found"
 
 
 class LoadEntity(CoordinatorEntity):
-    """Representation of the average daily load.
-
-    This sensor is used to display the average daily load for each hour of the day if available.
-    """
+    """Entity representing the average hourly load."""
 
     def __init__(
         self,
         entry_id: str,
         coordinator: DataUpdateCoordinator[dict[str, Any]],
-        # parent: str,
     ) -> None:
-        """Initialize the sensor."""
-
+        """Initialize the load entity."""
         super().__init__(coordinator)
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_load"
@@ -264,62 +239,54 @@ class LoadEntity(CoordinatorEntity):
 
     @property
     def name(self) -> str | None:
-        """Return the name of the sensor."""
+        """Return the name of the load entity."""
         return self._attr_name
 
     @property
     def unique_id(self) -> str | None:
-        """Return a unique ID."""
+        """Return a unique ID for the load entity."""
         return self._attr_unique_id
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return the device info."""
+        """Return the device info for the load entity."""
         return self._device_info
 
     @property
     def extra_state_attributes(self) -> dict[str, str]:
-        """Return the hourly load values as dict[str,str]."""
+        """Return hourly load values as state attributes."""
         hours: dict[int, int] = self._coordinator.data.get("load_averages", {})
-        # Use a Unicode "figure space" (\u2007) for padding, which matches digit width
         converted_hours: dict[str, str] = {
             printable_hour(
                 hour
-            ): f"{'\u2007\u2007' if watts > 999 else ''}{watts:,.0f}".replace(
+            ): f"{NBSP * 2 if watts > 999 else ''}{watts:,.0f}".replace(
                 ",", " ,"
-            ).rjust(7, "\u2007")
+            ).rjust(7, NBSP)
             + "w"
             for hour, watts in hours.items()
         }
         if not converted_hours:
             day = dt_util.now().strftime("%a")
             return {"No load averages found": day}
-        # Convert the values to a more readable format
-        printable_hours: dict[str, str] = converted_hours
-        return printable_hours
+        return converted_hours
 
     @property
     def state(self) -> str | int | float | None:
-        """Return the state of the sensor."""
+        """Return the total average daily load in kWh."""
         data: dict[int, int] = self._coordinator.data.get("load_averages", {})
         total_load = round(sum(data.values()) / 1000, 1)
         return f"{total_load} kWh"
 
 
 class PVEntity_today(CoordinatorEntity):
-    """Representation of the calculated PV generation for today.
-
-    This sensor is used to display the calculated PV generation for each hour of the day if available.
-    """
+    """Entity representing calculated PV generation for today."""
 
     def __init__(
         self,
         entry_id: str,
         coordinator: DataUpdateCoordinator[dict[str, Any]],
-        # parent: str,
     ) -> None:
-        """Initialize the sensor."""
-
+        """Initialize the PV today entity."""
         super().__init__(coordinator)
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_pv_generation_today"
@@ -332,29 +299,29 @@ class PVEntity_today(CoordinatorEntity):
 
     @property
     def name(self) -> str | None:
-        """Return the name of the sensor."""
+        """Return the name of the PV today entity."""
         return f"PV for {self._coordinator.data.get('pv_calculated_today_day', '')}"
 
     @property
     def unique_id(self) -> str | None:
-        """Return a unique ID."""
+        """Return a unique ID for the PV today entity."""
         return self._attr_unique_id
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return the device info."""
+        """Return the device info for the PV today entity."""
         return self._device_info
 
     @property
     def extra_state_attributes(self) -> dict[str, str]:
-        """Return the hourly pv generation values as dict[str,str]."""
+        """Return the hourly PV generation values as state attributes."""
         hours: dict[int, float] = self._coordinator.data.get("pv_calculated_today", {})
         converted_hours: dict[str, str] = {
             printable_hour(
                 hour
-            ): f"{'\u2007\u2007' if watts > 999 else ''}{watts:,.0f}".replace(
+            ): f"{NBSP * 2 if watts > 999 else ''}{watts:,.0f}".replace(
                 ",", " ,"
-            ).rjust(7, "\u2007")
+            ).rjust(7, NBSP)
             + "w"
             for hour, watts in hours.items()
         }
@@ -370,19 +337,14 @@ class PVEntity_today(CoordinatorEntity):
 
 
 class PVEntity_tomorrow(CoordinatorEntity):
-    """Representation of the calculated PV generation for tomorrow.
-
-    This sensor is used to display the calculated PV generation for each hour of the day if available.
-    """
+    """Entity representing calculated PV generation for tomorrow."""
 
     def __init__(
         self,
         entry_id: str,
         coordinator: DataUpdateCoordinator[dict[str, Any]],
-        # parent: str,
     ) -> None:
-        """Initialize the sensor."""
-
+        """Initialize the PV tomorrow entity."""
         super().__init__(coordinator)
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_pv_generation_tomorrow"
@@ -395,22 +357,22 @@ class PVEntity_tomorrow(CoordinatorEntity):
 
     @property
     def name(self) -> str | None:
-        """Return the name of the sensor."""
+        """Return the name of the PV tomorrow entity."""
         return f"PV for {self._coordinator.data.get('pv_calculated_tomorrow_day', '')}"
 
     @property
     def unique_id(self) -> str | None:
-        """Return a unique ID."""
+        """Return a unique ID for the PV tomorrow entity."""
         return self._attr_unique_id
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return the device info."""
+        """Return the device info for the PV tomorrow entity."""
         return self._device_info
 
     @property
     def extra_state_attributes(self) -> dict[str, str]:
-        """Return the hourly pv generation values as dict[str,str]."""
+        """Return the hourly PV generation values as state attributes."""
         hours: dict[int, float] = self._coordinator.data.get(
             "pv_calculated_tomorrow", 0
         )
@@ -418,11 +380,9 @@ class PVEntity_tomorrow(CoordinatorEntity):
             day: str = self._coordinator.data.get("pv_calculated_tomorrow_day", "")
             return {"No pv generation found": day}
         converted_hours: dict[str, str] = {
-            printable_hour(
-                hour
-            ): f"{'\u2007\u2007' if watts > 999 else ''}{watts:,.0f}".replace(
+            printable_hour(hour): f"{NBSP if watts > 999 else ''}{watts:,.0f}".replace(
                 ",", " ,"
-            ).rjust(7, "\u2007")
+            ).rjust(7, NBSP)
             + "w"
             for hour, watts in hours.items()
         }
@@ -483,7 +443,7 @@ class BatteryLifeEntity(CoordinatorEntity):
 
 
 class ApexChartEntity(CoordinatorEntity):
-    """Class for Grid Boost Apex Chart entity."""
+    """Class for GRIST Apex Chart entity."""
 
     def __init__(
         self,
