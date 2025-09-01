@@ -489,6 +489,7 @@ class GristScheduler:
         # Return the dictionary with all the calculated data
         return {
             "status": self.status.name if hasattr(self.status, "name") else str(self.status),
+            "forecaster_status": self.forecaster.status.name if hasattr(self.forecaster.status, "name") else str(self.forecaster.status),
             "battery_exhausted": (
             now + timedelta(minutes=remaining_battery_time)
             ).strftime("%a %-I:%M %p"),

@@ -61,7 +61,7 @@ The **GRIST Scheduler** custom component helps Home Assistant users minimize gri
 
 **docs-installation-parameters**: Mostly Done. (Need HACS instructions.)
 
-**entity-unavailable**: VERIFY THIS
+**entity-unavailable**: Done.  Double check if I uninstall the forecaster.
 - What:
 Entities must correctly report when they are unavailable (e.g., due to lost connection or missing data).
 

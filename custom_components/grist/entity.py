@@ -148,6 +148,7 @@ class SchedulerEntity(CoordinatorEntity):
 
         return {
             "status": self.coordinator.data.get("status", "n/a"),
+            "forecaster_status": self.coordinator.data.get("forecaster_status", "n/a"),
             "mode": self.coordinator.data.get("mode", "n/a"),
             "calculated": f"{self.coordinator.data.get('calculated', 'n/a')}%" if self.coordinator.data.get("calculated") is not None else "n/a",
             "manual": f"{self.coordinator.data.get('manual', 'n/a')}%" if self.coordinator.data.get("manual") is not None else "n/a",
