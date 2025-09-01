@@ -98,10 +98,12 @@ class Meteo:
             else:
                 self._next_update = dt_util.now() + timedelta(minutes=-1)
             forecast_dates = list(self._forecast.keys())
+            self._status = Status.NORMAL
             logger.debug("Loaded forecast data from storage: %s", forecast_dates)
         else:
             logger.debug("No forecast data found in storage, starting fresh")
             await self.update_data()
+        self._status = Status.NORMAL
 
     async def async_unload_entry(self) -> None:
         """Clean up resources and listeners for the Meteo integration."""

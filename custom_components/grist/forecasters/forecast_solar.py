@@ -118,6 +118,7 @@ class ForecastSolar:
             logger.debug("Loaded forecast data from storage: %s", forecast_dates)
         else:
             logger.debug("No forecast data found in storage, starting fresh")
+        self._status = Status.NORMAL
 
     async def update_data(self) -> None:
         """Fetch and process data from Home Assistant sensors and Forecast.Solar API.

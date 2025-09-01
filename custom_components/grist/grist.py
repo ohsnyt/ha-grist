@@ -34,6 +34,7 @@ from .const import (
     SWITCH_TOU_STATE,
     BoostMode,
     Status,
+    UPDATE_INTERVAL,
 )
 from .daily_calcs import DailyStats
 from .forecasters.forecast_solar import ForecastSolar
@@ -156,10 +157,7 @@ class GristScheduler:
         await self._select_forecaster()
         if not self.forecaster:
             logger.error("No forecaster available, cannot proceed with setup")
-            raise ConfigEntryError(
-                "No forecaster available. Checked integrations: solcast_solar, forecast_solar, open_meteo. "
-                "Please ensure at least one of these integrations is installed, configured, and running."
-            )
+            return
 
         self.battery = Battery(self.hass)
         await self.battery.async_initialize()
@@ -180,7 +178,7 @@ class GristScheduler:
     async def _select_forecaster(self) -> bool:
         """Select the forecaster based on which one is in NORMAL status."""
         # Get all config entries for the Forecast.solar domain
-        integration_list = ["solcast_solar", "forecast_solar", "open_meteo"]
+        integration_list = ["solcast_solar", "forecast_solar", "open_meteo_solar_forecast"]
         # Check if any entry is in the LOADED state
         integration = await self._is_integration_running(integration_list)
 
@@ -191,7 +189,7 @@ class GristScheduler:
             elif integration == "forecast_solar":
                 self.forecaster = ForecastSolar(self.hass)
                 # Could also add a percentile if needed
-            elif integration == "open_meteo":
+            elif integration == "open_meteo_solar_forecast":
                 self.forecaster = Meteo(self.hass)
             if self.forecaster is not None:
                 await self.forecaster.async_initialize()
@@ -225,6 +223,12 @@ class GristScheduler:
         if not all_entries:
             logger.warning("No forecaster entries found in your system! Looked for %s", integration_list)
             return None
+        msg: list[str] = [
+            f"\nFound: domain={entry.domain}, title={entry.title}, state={entry.state}"
+            for entry in all_entries
+        ]
+        logger.debug("".join(msg))
+
 
         for integration in integration_list:
             entries = [entry for entry in all_entries if entry.domain == integration]
@@ -453,8 +457,18 @@ class GristScheduler:
 
         # Verify that the forecaster is still running. If not, set status to offline.
         if not self.forecaster or self.forecaster.status != Status.NORMAL:
-            logger.warning("Forecaster is not currently running... Trying to find and start a forecaster.")\
-            return {"status": Status.FAULT}
+            logger.debug("%s\nForecaster is not currently running... Trying to find and start a forecaster.%s", PURPLE, RESET)
+            await self._select_forecaster()
+            # If we got a forecaster, try to initialize it. That will set the Status of the forecaster.
+            await self.forecaster.async_initialize() if self.forecaster else None
+            if not self.forecaster or self.forecaster.status != Status.NORMAL:
+                logger.warning("No suitable forecaster found. Will retry in %s seconds", UPDATE_INTERVAL)
+                return {"status": Status.FAULT}
+            # Got a new forecaster. Make sure we also have battery and daily statistics objects
+            self.battery = Battery(self.hass) if not self.battery else self.battery
+            self.daily = DailyStats(self.hass, self.days_of_load_history) if not self.daily else self.daily
+            # Reset daily task time so we can update the daily tasks next.
+            self._daily_task_next_start = dt_util.now()
 
         # Check if the daily tasks need to be run.
         await self._daily_tasks()

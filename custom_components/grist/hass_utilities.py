@@ -69,10 +69,11 @@ async def find_entities_by_prefixes(
     """
     # Find all entities that start with the given prefix
     entities = []
+    all_entities = hass.states.async_all("sensor")
     for prefix in prefixes:
         entities.extend(
             state.entity_id
-            for state in hass.states.async_all("sensor")
+            for state in all_entities
             if state.entity_id.startswith(prefix)
         )
     if not entities:
