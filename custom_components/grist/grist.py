@@ -453,7 +453,7 @@ class GristScheduler:
 
         # Verify that the forecaster is still running. If not, set status to offline.
         if not self.forecaster or self.forecaster.status != Status.NORMAL:
-            logger.warning("Forecaster is not currently running...")
+            logger.warning("Forecaster is not currently running... Trying to find and start a forecaster.")\
             return {"status": Status.FAULT}
 
         # Check if the daily tasks need to be run.
