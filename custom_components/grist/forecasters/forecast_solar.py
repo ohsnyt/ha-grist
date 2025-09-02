@@ -89,6 +89,7 @@ class ForecastSolar:
         self._next_update = dt_util.now() + timedelta(minutes=-1)
         self._panel_configurations = {}
         self.update_hour = update_hour
+        self._name = "Forecast Solar"
 
         # Initialize storage
         self._store = Store(hass, STORAGE_VERSION, FORECAST_KEY)
@@ -464,6 +465,11 @@ class ForecastSolar:
     def status(self) -> Status:
         """Return the current status of the ForecastSolar integration."""
         return self._status
+
+    @property
+    def name(self) -> str:
+        """Return the name of the ForecastSolar integration."""
+        return self._name
 
 
 def generate_day_data(sunrise, sunset) -> dict:

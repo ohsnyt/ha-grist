@@ -61,7 +61,8 @@ The **GRIST Scheduler** custom component helps Home Assistant users minimize gri
 
 **docs-installation-parameters**: Mostly Done. (Need HACS instructions.)
 
-**entity-unavailable**: Done.  Double check if I uninstall the forecaster.
+**entity-unavailable**: In Progress.  Now testing, but the issue is that the forecaster will not change status until the next time the forecaster tries to get data from it's api. We can't call this often because the apis have limits. This means it could take 12 hours until we find out the forecaster has "expired" and a new one is needed. There appears to be no way around this.
+
 - What:
 Entities must correctly report when they are unavailable (e.g., due to lost connection or missing data).
 

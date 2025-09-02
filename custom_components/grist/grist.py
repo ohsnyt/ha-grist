@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -154,18 +155,8 @@ class GristScheduler:
 
     async def _post_hass_started_setup(self):
         """Continue setup after Home Assistant is running."""
-        await self._select_forecaster()
-        if not self.forecaster:
-            logger.error("No forecaster available, cannot proceed with setup")
-            return
-
-        self.battery = Battery(self.hass)
-        await self.battery.async_initialize()
-
-        self.daily = DailyStats(self.hass, self.days_of_load_history)
-        await self.daily.async_initialize(self.forecaster)
-
-        self.status = Status.NORMAL
+        # Daily tasks will ensure we have forecaster, battery, and daily stats objects initialized.
+        await self._daily_tasks()
 
         msg = (
             f"{PURPLE}\n-------------------GRIST initialized successfully with the following settings-------------------"
@@ -183,7 +174,6 @@ class GristScheduler:
         integration = await self._is_integration_running(integration_list)
 
         if integration:
-            logger.info("Selected forecaster: %s", integration)
             if integration == "solcast_solar":
                 self.forecaster = Solcast(self.hass)
             elif integration == "forecast_solar":
@@ -192,6 +182,7 @@ class GristScheduler:
             elif integration == "open_meteo_solar_forecast":
                 self.forecaster = Meteo(self.hass)
             if self.forecaster is not None:
+                logger.info("Selected forecaster: %s", self.forecaster.name)
                 await self.forecaster.async_initialize()
             return True
         logger.warning("No forecast integration found")
@@ -223,11 +214,11 @@ class GristScheduler:
         if not all_entries:
             logger.warning("No forecaster entries found in your system! Looked for %s", integration_list)
             return None
-        msg: list[str] = [
-            f"\nFound: domain={entry.domain}, title={entry.title}, state={entry.state}"
-            for entry in all_entries
-        ]
-        logger.debug("".join(msg))
+        # msg: list[str] = [
+        #     f"\nFound: domain={entry.domain}, title={entry.title}, state={entry.state}"
+        #     for entry in all_entries
+        # ]
+        # logger.debug("".join(msg))
 
 
         for integration in integration_list:
@@ -243,13 +234,27 @@ class GristScheduler:
         if self._daily_task_next_start > dt_util.now():
             return
 
+        # Verify that the forecaster is still running. If not, set status to offline.
+        logger.debug("Checking %s and updating forecast.", self.forecaster.name if self.forecaster else "Unknown")
+        if not self.forecaster or self.forecaster.status != Status.NORMAL:
+            logger.warning("%s\nForecaster is not currently running... Trying to find and start a forecaster.%s", PURPLE, RESET)
+            self.status = Status.NOT_CONFIGURED
+            await self._select_forecaster()
+            # If we got a forecaster, try to initialize it. That will set the Status of the forecaster.
+            await self.forecaster.async_initialize() if self.forecaster else None
+            if not self.forecaster or self.forecaster.status != Status.NORMAL:
+                logger.warning("No suitable forecaster found. Will retry in %s seconds", UPDATE_INTERVAL)
+                return
+            # Got a new forecaster. Make sure we also have battery and daily statistics objects
+            self.battery = Battery(self.hass) if not self.battery else self.battery
+            self.daily = DailyStats(self.hass, self.days_of_load_history) if not self.daily else self.daily
+
         if self.forecaster and self.daily and self.battery:
             await self.forecaster.update_data()
             await self.daily.update_data(self.forecaster)
             await self.battery.update_data()
             self.status = Status.NORMAL
         else:
-            self.status = Status.NOT_CONFIGURED
             if not self.forecaster:
                 logger.warning("Forecaster not configured")
             if not self.daily:
@@ -258,15 +263,19 @@ class GristScheduler:
                 logger.warning("Battery not configured")
             return
 
+        # Temporarily reset daily task next start time to every hour.
+        self._daily_task_next_start = dt_util.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        return
+
         # Reset daily task next start time. We will run twice a day, once just after midnight and once at 10 pm.
-        if dt_util.now().hour < 22:
-            self._daily_task_next_start = dt_util.now().replace(
-                hour=22, minute=0, second=0, microsecond=0
-            )
-        else:
-            self._daily_task_next_start = dt_util.now().replace(
-                hour=0, minute=1, second=0, microsecond=0
-            ) + timedelta(days=1)
+        # if dt_util.now().hour < 22:
+        #     self._daily_task_next_start = dt_util.now().replace(
+        #         hour=22, minute=0, second=0, microsecond=0
+        #     )
+        # else:
+        #     self._daily_task_next_start = dt_util.now().replace(
+        #         hour=0, minute=1, second=0, microsecond=0
+        #     ) + timedelta(days=1)
 
     async def _refresh_boost(self) -> None:
         """Recalculate statistics once an hour."""
@@ -274,10 +283,9 @@ class GristScheduler:
             return
 
         logger.debug(
-            "\n%s--------------------------------------------------------\nStarting grist._refresh_boost.\n--------------------------------------------------------%s",
-            # "\n%s--------------------------------------------------------\nStarting grist._refresh_boost.\nCalled from:%s\n--------------------------------------------------------%s",
+            "\n%s----------------------------------------\nStarting grist._refresh_boost with forecast from %s.\n--------------------------------------------------------%s",
             PURPLE,
-            # "".join(traceback.format_stack()),
+            self.forecaster.name if self.forecaster else "Unknown",
             RESET,
         )
 
@@ -455,23 +463,12 @@ class GristScheduler:
             logger.debug("Home Assistant is still starting...")
             return {"status": Status.STARTING}
 
-        # Verify that the forecaster is still running. If not, set status to offline.
-        if not self.forecaster or self.forecaster.status != Status.NORMAL:
-            logger.debug("%s\nForecaster is not currently running... Trying to find and start a forecaster.%s", PURPLE, RESET)
-            await self._select_forecaster()
-            # If we got a forecaster, try to initialize it. That will set the Status of the forecaster.
-            await self.forecaster.async_initialize() if self.forecaster else None
-            if not self.forecaster or self.forecaster.status != Status.NORMAL:
-                logger.warning("No suitable forecaster found. Will retry in %s seconds", UPDATE_INTERVAL)
-                return {"status": Status.FAULT}
-            # Got a new forecaster. Make sure we also have battery and daily statistics objects
-            self.battery = Battery(self.hass) if not self.battery else self.battery
-            self.daily = DailyStats(self.hass, self.days_of_load_history) if not self.daily else self.daily
-            # Reset daily task time so we can update the daily tasks next.
-            self._daily_task_next_start = dt_util.now()
-
         # Check if the daily tasks need to be run.
         await self._daily_tasks()
+
+        # If daily tasks triggered a fault, report that. We can't continue.
+        if self.status != Status.NORMAL:
+            return {"status": Status.FAULT}
 
         # Check if the refresh boost task needs to be run.
         await self._refresh_boost()
@@ -503,7 +500,11 @@ class GristScheduler:
         # Return the dictionary with all the calculated data
         return {
             "status": self.status.name if hasattr(self.status, "name") else str(self.status),
-            "forecaster_status": self.forecaster.status.name if hasattr(self.forecaster.status, "name") else str(self.forecaster.status),
+            "forecaster_status": (
+                self.forecaster.status.name
+                if self.forecaster and hasattr(self.forecaster.status, "name")
+                else str(self.forecaster.status) if self.forecaster else "None"
+            ),
             "battery_exhausted": (
             now + timedelta(minutes=remaining_battery_time)
             ).strftime("%a %-I:%M %p"),

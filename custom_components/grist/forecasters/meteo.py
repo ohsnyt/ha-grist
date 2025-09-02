@@ -76,6 +76,7 @@ class Meteo:
         self._forecast: dict[str, dict[int, int]] = {}
         self._unsub_update = None
         self._store = Store(hass, STORAGE_VERSION, FORECAST_KEY)
+        self._name = "Open Meteo Solar Forecast"
 
     async def async_initialize(self) -> None:
         """Load forecast data from storage.
@@ -262,5 +263,10 @@ class Meteo:
 
     @property
     def status(self) -> Status:
-        """Return the current status of the Meteo integration."""
+        """Return the current status of the integration."""
         return self._status
+
+    @property
+    def name(self) -> str:
+        """Return the name of the integration."""
+        return self._name
