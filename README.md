@@ -2,13 +2,11 @@
 
 **GRIST** helps Home Assistant users minimize grid electricity costs by intelligently managing battery charging and solar usage in homes equipped with solar panels and battery storage.
 
-It is designed for systems where the battery can supply most or all of the home's daily electricity needs and where your electicity costs during early morning hours are cheaper than during peak grid use hours (usually the afternoon).
-
 The scheduler automatically determines how much to charge the battery during off-peak hours, aiming to avoid grid usage during expensive peak times. It adapts to changing weather and load conditions using solar forecasts and historical consumption data, and provides manual override options for special circumstances.
 
-**NOTE: Version 1.0.0 only works with batteries that are managed by State of Charge (not voltage).** For the Sol-Ark and Deye inverters, this is called Lithium batteries of Type 00. Subsequent versions may include manage voltage levels instead of state of charge, if that is desired.'
+**NOTE: Version 1.0.0 only works with batteries that are managed by State of Charge (not voltage).** For the Sol-Ark and Deye inverters, this is called Lithium batteries of Type 00. Subsequent versions may include manage voltage levels instead of state of charge. Let me know if this is important to you.'
 
-NOTE: Installing this integration and using the mode to either Automatic or Manual will turn On the Time of Use feature in your inverter. If you want to turn that off, you must turn it off through the inverter directly. This does NOT turn off the time of use feature. Why? You may want...
+**NOTE**: Installing this integration and using the mode to either Automatic or Manual will turn On the Time of Use feature in your inverter.
 
 ## Features
 
@@ -64,9 +62,6 @@ I have found that the performance of my solar panels varies from season to seaso
 
 ### Sensors Exposed
 
-- **Estimated PV Power:**
-  Current estimated PV power output as adjusted based on your system performance.
-
 - **Calculated Grid Boost SoC:**
   Automatically calculated battery charge target for off-peak charging.
 
@@ -82,14 +77,14 @@ I have found that the performance of my solar panels varies from season to seaso
 - **Scheduler Entity:**
   Summarizes the current mode (automatic/manual), boost settings, load history days, and forecast values.
 
+- **Estimated PV Power:**
+  Current estimated PV power output as adjusted based on your system performance.
+
 - **Load Entity:**
   Presents the average hourly load over the selected history period.
 
-- **Shading Entity:**
-  Shows the calculated shading ratio for each hour, based on PV performance.
-
-- **Battery Life Entity:**
-  Estimates the State of Charge for the battery for each hour, based on hourly estimated PV and load averages.
+- **PV Ratio Entity:**
+  Shows the calculated shading/extra ratio for each hour, based on PV performance.
 
 ## Configuration
 
@@ -98,9 +93,11 @@ I have found that the performance of my solar panels varies from season to seaso
 **Prerequisites:**
   To use the integration, you must have:
 
+- Home Assistant with the MQTT integration installed.
 - a Sol-Ark (or Deye based) inverter,
 - an LFP (Lithium Iron Phosphate, or LiFePo4) battery that is able to report it's state of charge to the inverter, and
-- Solar Assistant monitoring your inverter and batteries and reporting real-time data to your instance of Home Assistant
+- Solar Assistant monitoring your inverter and batteries, with MQTT turned on and reporting real-time data to your instance of Home Assistant
+- network connection between Solar Assistant and your Home Assistant systems
 
 In addition you must install one of three solar forecaster tools:
 
@@ -111,6 +108,8 @@ In addition you must install one of three solar forecaster tools:
 (If you install more than one, they will be selected in the order presented above.)
 
 I use the Solcast tool because I like the unique feature it offers of allowing you to decide how pessimistic (or optimistic) you want the forecast to be. Solcast give a 10 percentile forecast (worst case), a 50 percentile forecast (most likely) and a 90% forecast (best case). When heavy but intermitted clouds are forecast, the spread between 10 and 90 percentile can be quite large. GRIST extrapolates those forecasts so you can choose any percentile you want between 10 and 90. Since I am optimizing to avoid using the grid after 6am, I normally use a 25 percentile figure. (I'm not TOTALLY pessimistic!!!)
+
+![Diagram of GRIST components](./custom_components/grist/GRIST-diagram.png)
 
 **Install the Integration:**
    TODO: HACS installation instructions and link to page
@@ -135,11 +134,13 @@ I use the Solcast tool because I like the unique feature it offers of allowing y
 
 ## Removal
 
-To remove GRIST, Go to Settings/Devices & Services/GRIST. Using the three vertical dots next to CONFIGURE, select DELETE from the drop down menu. If you want to turn off the Time of Use feature on your inverter, you should first click on the CONFIGURE button and set the Boost Mode to Off. You will need to confirm that choice, continue on to the details form, and Save. This will turn off the Time of Use mode through Solar Assistant. You can then remove GRIST.
+To remove GRIST, Go to Settings/Devices & Services/GRIST. Using the three vertical dots next to CONFIGURE, select DELETE from the drop down menu.
+
+If you want to turn off the Time of Use feature on your inverter, you should first click on the CONFIGURE button and set the Boost Mode to Off. You will need to confirm that choice, continue on to the details form, and Save. This will turn off the Time of Use mode through Solar Assistant. You can then remove GRIST.
 
 ## Notes
 
-As mentioned above, there are six Time of Use slots in a Deye (Sol-Ark) inverter. GRIST turns on the Time of Use feature, manages slot 1 start time and state of charge value, and sets the start time of slot 2. (It does not manage the power level used from the grid. The inverter default is the maximum value for your inverter model. You may change this value if you like.)
+As mentioned above, there are six Time of Use slots in a Deye (Sol-Ark) inverter. GRIST turns on the Time of Use feature, manages slot 1 start time and state of charge value, and sets the start time of slot 2. (Your inverter will also let you set the power level used from the grid. GRIST does not that.)
 
 The inverter requires all slots to be set in order to use the Time of Use feature, and will have default values. You may change the values in slots 3-6 as you desire. Remember that this integration does manage the time value for slot 2. Be sure to read your inverter documentation before making changes.
 
