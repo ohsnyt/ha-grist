@@ -8,13 +8,12 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
-import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryError
+import homeassistant.helpers.entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from .battery import Battery
@@ -29,25 +28,75 @@ from .const import (
     DEFAULT_INVERTER_EFFICIENCY,
     DEFAULT_LOAD_AVERAGE_DAYS,
     DEFAULT_UPDATE_HOUR,
+    FORECASTER_INTEGRATIONS,
     NUMBER_CAPACITY_POINT_1,
     PURPLE,
     RESET,
     SWITCH_TOU_STATE,
+    UPDATE_INTERVAL,
     BoostMode,
     Status,
-    UPDATE_INTERVAL,
 )
-from .daily_calcs import DailyStats
 from .forecasters.forecast_solar import ForecastSolar
 from .forecasters.meteo import Meteo
 from .forecasters.solcast import Solcast
-from .hass_utilities import get_state, get_switch, set_number, set_switch
+from .statistics_calcs import DailyStats
 
 logger: logging.Logger = logging.getLogger(__name__)
 if DEBUGGING:
     logger.setLevel(logging.DEBUG)
 else:
     logger.setLevel(logging.INFO)
+
+FORECASTER_CLASS_MAP = {
+    "solcast_solar": Solcast,
+    "forecast_solar": ForecastSolar,
+    "open_meteo_solar_forecast": Meteo,
+}
+
+class MQTTFailures:
+    """Track MQTT failures for the GRIST Scheduler."""
+
+    def __init__(self) -> None:
+        """Initialize MQTT failure tracking."""
+        self._faults: int = 0
+        self._errors: int = 0
+        self._repeating: int = 0
+
+    def log_failure(self, topic: Status) -> None:
+        """Log a failure for a specific MQTT topic."""
+        if topic == Status.MQTT_OFF:
+            self._faults += 1
+        else:
+            self._errors += 1
+            self._repeating += 1
+        logger.debug(
+            "\n%sMQTT failure logged. Current faults: %s, errors: %s, repeating: %s%s",
+            PURPLE,
+            self._faults,
+            self._errors,
+            self._repeating,
+            RESET
+        )
+
+    def log_normal(self) -> None:
+        """Log a normal (successful) state for the MQTT topic."""
+        self._repeating = 0
+
+    @property
+    def faults(self) -> int:
+        """Get the number of faults (MQTT_OFF) for the GRIST Scheduler."""
+        return self._faults
+
+    @property
+    def errors(self) -> int:
+        """Get the number of errors (MQTT_ON) for the GRIST Scheduler."""
+        return self._errors
+
+    @property
+    def repeating(self) -> int:
+        """Get the number of repeating errors (MQTT_REPEATING) for the GRIST Scheduler."""
+        return self._repeating
 
 
 # Utility function to convert an integer to its ordinal representation, used for sensors
@@ -113,18 +162,18 @@ class GristScheduler:
         self.grist_end = options.get("grist_end", DEFAULT_GRIST_END)
         self.update_hour = options.get("update_hour", DEFAULT_UPDATE_HOUR)
         self.minimum_soc = options.get("minimum_soc", DEFAULT_BATTERY_MIN_SOC)
-        self.days_of_load_history = options.get(
-            "history_days", DEFAULT_LOAD_AVERAGE_DAYS
-        )
+        self.days_of_load_history = options.get("history_days", DEFAULT_LOAD_AVERAGE_DAYS)
 
         # Reserve space for the forecaster, battery and calculation objects
         self.forecaster = None
+        self.forecaster_tag = None
         self.battery = None
-        self.daily = None
+        self.calculated_stats = None
 
         self.status = Status.STARTING
         self._refresh_boost_next_start = dt_util.now()
-        self._daily_task_next_start = dt_util.now()
+        self._update_task_next_start = dt_util.now()
+        self._mqtt_failures = MQTTFailures()
 
         # GRIST settings
         self.grist_actual: int = DEFAULT_GRIST_STARTING_SOC
@@ -155,38 +204,37 @@ class GristScheduler:
 
     async def _post_hass_started_setup(self):
         """Continue setup after Home Assistant is running."""
-        # Daily tasks will ensure we have forecaster, battery, and daily stats objects initialized.
-        await self._daily_tasks()
+        # Update will ensure we have forecaster, battery, and daily stats objects initialized.
+        await self._update()
 
         msg = (
             f"{PURPLE}\n-------------------GRIST initialized successfully with the following settings-------------------"
-            f"\n   Boost_mode: {self.boost_mode} - Manual SoC: {self.grist_manual}%% - Minimum SoC: {self.minimum_soc}%%"
+            f"\n   Boost_mode: {self.boost_mode} - Manual SoC: {self.grist_manual}% - Minimum SoC: {self.minimum_soc}%"
             f"\n   Boost from: {to_hour(self.grist_start)} - {to_hour(self.grist_end)}, fetching forecast at: {to_hour(self.update_hour)} using {self.days_of_load_history} days of load history"
             f"\n-------------------------------------------------------------------------------------------------{RESET}"
         )
         logger.debug(msg)
 
-    async def _select_forecaster(self) -> bool:
+    async def _select_forecaster(self):
         """Select the forecaster based on which one is in NORMAL status."""
-        # Get all config entries for the Forecast.solar domain
-        integration_list = ["solcast_solar", "forecast_solar", "open_meteo_solar_forecast"]
-        # Check if any entry is in the LOADED state
-        integration = await self._is_integration_running(integration_list)
-
+        # Check which forecaster integrations are available and running
+        integration = await self._is_integration_running(FORECASTER_INTEGRATIONS)
+        # If we found a running integration, select it and initialize it.
         if integration:
-            if integration == "solcast_solar":
-                self.forecaster = Solcast(self.hass)
-            elif integration == "forecast_solar":
-                self.forecaster = ForecastSolar(self.hass)
-                # Could also add a percentile if needed
-            elif integration == "open_meteo_solar_forecast":
-                self.forecaster = Meteo(self.hass)
-            if self.forecaster is not None:
-                logger.info("Selected forecaster: %s", self.forecaster.name)
-                await self.forecaster.async_initialize()
-            return True
+            klass = FORECASTER_CLASS_MAP[integration]
+            self.forecaster = klass(self.hass)
+            self.forecaster_tag = integration
+        if self.forecaster is not None:
+            logger.info(
+                "Selected forecaster: %s", getattr(self.forecaster, "name", integration)
+            )
+            await self.forecaster.async_initialize()
+            # Set the status to NORMAL and return
+            self.status = Status.NORMAL
+            return
+        # If we didn't find a running integration, log a warning
         logger.warning("No forecast integration found")
-        return False
+        self.status = Status.NOT_CONFIGURED
 
     async def async_unload_entry(self) -> None:
         """Unload all sub-objects."""
@@ -195,11 +243,11 @@ class GristScheduler:
             await self.battery.async_unload_entry()
         if self.forecaster:
             await self.forecaster.async_unload_entry()
-        if self.daily:
-            await self.daily.async_unload_entry()
+        if self.calculated_stats:
+            await self.calculated_stats.async_unload_entry()
 
     async def _is_integration_running(self, integration_list: list) -> str | None:
-        """Check if any (forecaster) integration in the provided list is currently running (i.e., in the LOADED state).
+        """Check if any integration domain in the provided list is currently running (i.e., in the LOADED state).
 
         Args:
             integration_list (list): List of integration domain names to check.
@@ -209,97 +257,130 @@ class GristScheduler:
 
         """
         # Get all config entries for the integration domain
-        all_entries: list[ConfigEntry[Any]] = self.hass.config_entries.async_entries()
+        all_entries: list[ConfigEntry] = self.hass.config_entries.async_entries()
         # Filter entries for the specific integration
         if not all_entries:
-            logger.warning("No forecaster entries found in your system! Looked for %s", integration_list)
+            logger.warning(
+                "No forecaster entries found in your system! Looked for %s",
+                integration_list,
+            )
+            self.forecaster = None
+            self.status = Status.NOT_CONFIGURED
             return None
-        # msg: list[str] = [
-        #     f"\nFound: domain={entry.domain}, title={entry.title}, state={entry.state}"
-        #     for entry in all_entries
-        # ]
-        # logger.debug("".join(msg))
 
+        # Build a mapping from domain to entries for efficient lookup
+        domain_to_entries = {}
+        for entry in all_entries:
+            domain_to_entries.setdefault(entry.domain, []).append(entry)
 
         for integration in integration_list:
-            entries = [entry for entry in all_entries if entry.domain == integration]
+            entries = domain_to_entries.get(integration, [])
             if any(entry.state == ConfigEntryState.LOADED for entry in entries):
                 return integration
 
+        # No running integration found, set status and forecaster once here
+        self.forecaster = None
+        self.status = Status.NOT_CONFIGURED
         logger.warning("No running integration found in %s", integration_list)
         return None
 
-    async def _daily_tasks(self) -> None:
+    async def _update(self) -> None:
         """Update forecaster, daily and battery data as needed."""
-        if self._daily_task_next_start > dt_util.now():
+        if DEBUGGING and self._update_task_next_start > dt_util.now():
+            logger.debug("Next update in %s hours and %s minutes", (self._update_task_next_start - dt_util.now()).seconds // 3600, (self._update_task_next_start - dt_util.now()).seconds // 60 % 60)
             return
 
-        # Verify that the forecaster is still running. If not, set status to offline.
-        logger.debug("Checking %s and updating forecast.", self.forecaster.name if self.forecaster else "Unknown")
-        if not self.forecaster or self.forecaster.status != Status.NORMAL:
-            logger.warning("%s\nForecaster is not currently running... Trying to find and start a forecaster.%s", PURPLE, RESET)
+        # Verify that the forecaster is still loaded
+        if self.forecaster_tag and await self._is_integration_running([self.forecaster_tag]):
+            pass
+        else:
             self.status = Status.NOT_CONFIGURED
+            # If not, try to load one
+            logger.warning(
+                "%s\n%s... Trying to find and start a forecaster.%s",
+                PURPLE,
+                f"{self.forecaster_tag} is not currently running" if self.forecaster_tag else 'No forecaster is currently running',
+                RESET,
+            )
             await self._select_forecaster()
-            # If we got a forecaster, try to initialize it. That will set the Status of the forecaster.
-            await self.forecaster.async_initialize() if self.forecaster else None
-            if not self.forecaster or self.forecaster.status != Status.NORMAL:
-                logger.warning("No suitable forecaster found. Will retry in %s seconds", UPDATE_INTERVAL)
+
+            if self.status != Status.NORMAL:
+                logger.warning(
+                    "No suitable forecaster found. Will retry in %s seconds",
+                    UPDATE_INTERVAL,
+                )
                 return
+
             # Got a new forecaster. Make sure we also have battery and daily statistics objects
             self.battery = Battery(self.hass) if not self.battery else self.battery
-            self.daily = DailyStats(self.hass, self.days_of_load_history) if not self.daily else self.daily
+            self.calculated_stats = (
+                DailyStats(self.hass, self.days_of_load_history)
+                if not self.calculated_stats
+                else self.calculated_stats
+            )
 
-        if self.forecaster and self.daily and self.battery:
+        # We have a forecaster, daily stats, and battery objects so update them.
+        if self.forecaster and self.calculated_stats and self.battery:
             await self.forecaster.update_data()
-            await self.daily.update_data(self.forecaster)
+            await self.calculated_stats.update_data(self.forecaster)
             await self.battery.update_data()
-            self.status = Status.NORMAL
+            if self.battery is not None:
+                if self.battery is not None:
+                    self._mqtt_failures.log_failure(self.battery.status) if self.battery.status != Status.NORMAL else self._mqtt_failures.log_normal()
+
+            if self.forecaster.status == Status.NORMAL and self.calculated_stats.status == Status.NORMAL and self.battery.status == Status.NORMAL:
+                self.status = Status.NORMAL
         else:
+            # Just in case something is missing. We should never get here.
             if not self.forecaster:
-                logger.warning("Forecaster not configured")
-            if not self.daily:
-                logger.warning("DailyStats not configured")
+                logger.warning("Forecaster system not configured")
+            if not self.calculated_stats:
+                logger.warning("Calculated Stats system not configured")
             if not self.battery:
-                logger.warning("Battery not configured")
+                logger.warning("Battery system not configured")
+            self.status = Status.NOT_CONFIGURED
             return
 
-        # Temporarily reset daily task next start time to every hour.
-        self._daily_task_next_start = dt_util.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-        return
-
-        # Reset daily task next start time. We will run twice a day, once just after midnight and once at 10 pm.
-        # if dt_util.now().hour < 22:
-        #     self._daily_task_next_start = dt_util.now().replace(
-        #         hour=22, minute=0, second=0, microsecond=0
-        #     )
-        # else:
-        #     self._daily_task_next_start = dt_util.now().replace(
-        #         hour=0, minute=1, second=0, microsecond=0
-        #     ) + timedelta(days=1)
+        # Reset daily task next start time.
+        # If the current time is before the update hour, schedule the next update to the user's update hour.
+        # This will gather the latest forecast data to accurately calculate boost levels for the upcoming day.
+        if dt_util.now().hour < self.update_hour:
+            self._update_task_next_start = dt_util.now().replace(
+                hour=self.update_hour, minute=0, second=0, microsecond=0
+            )
+        else:
+            # If the current time is after the update hour, schedule the next update for the next day.
+            # This early morning run will update load and PV ratios based on the previous day's data.
+            self._update_task_next_start = dt_util.now().replace(
+                hour=0, minute=2, second=0, microsecond=0
+            ) + timedelta(days=1)
 
     async def _refresh_boost(self) -> None:
         """Recalculate statistics once an hour."""
         if self._refresh_boost_next_start > dt_util.now():
             return
-
+        next_update = self.forecaster.next_update if self.forecaster else None
         logger.debug(
-            "\n%s----------------------------------------\nStarting grist._refresh_boost with forecast from %s.\n--------------------------------------------------------%s",
+            "\n%s%s\nStarting grist._refresh_boost with forecast from %s. Next update at %s.\n%s%s",
             PURPLE,
+            "-" * 80,
             self.forecaster.name if self.forecaster else "Unknown",
+            next_update.strftime("%a %I:%M %p") if next_update else "Unknown",
+            "-" * 80,
             RESET,
         )
 
-        if self.daily is None or self.battery is None:
-            if self.daily is None:
+        if self.calculated_stats is None or self.battery is None:
+            if self.calculated_stats is None:
                 logger.warning("DailyStats not initialized, cannot refresh boost.")
             if self.battery is None:
                 logger.warning("Battery not initialized, cannot refresh boost.")
             return
-        adjusted_pv: dict[int, int] = self.daily.forecast_tomorrow_adjusted
-            # Debugging, check adjusted_pv to see if it is all zeros
+        adjusted_pv: dict[int, int] = self.calculated_stats.forecast_tomorrow_adjusted
+        # Debugging, check adjusted_pv to see if it is all zeros
         if not adjusted_pv or all(value == 0 for value in adjusted_pv.values()):
             logger.warning(
-            "HEY! Adjusted PV data is empty or all zeros, skipping boost calculation"
+                "HEY! Adjusted PV data is empty or all zeros, skipping boost calculation"
             )
             return
 
@@ -307,8 +388,8 @@ class GristScheduler:
             battery_max_wh=self.battery.capacity_wh,
             efficiency=DEFAULT_INVERTER_EFFICIENCY,
             minimum_soc=self.minimum_soc,
-            adjusted_pv=self.daily.forecast_tomorrow_adjusted,
-            average_hourly_load=self.daily.average_hourly_load,
+            adjusted_pv=self.calculated_stats.forecast_tomorrow_adjusted,
+            average_hourly_load=self.calculated_stats.average_hourly_load,
         )
         # If we could not yet calculate the boost, try again a bit later. Probably because we don't have forecast data yet.
         if boost is None:
@@ -316,8 +397,21 @@ class GristScheduler:
             return
 
         self.grist_calculated = int(boost) if boost else int(self.grist_manual)
-        # Write the boost to the inverter if we are in automatic or manual mode, making sure ToU is on
-        tou = await get_switch(self.hass, entity_id=SWITCH_TOU_STATE)
+        # Make sure MQTT is on
+        if "mqtt" not in self.hass.config.components:
+            logger.error("MQTT system is not running")
+            self.status = Status.MQTT_OFF
+            return
+
+        # Make sure ToU is on before we write
+        tou = False
+        state = self.hass.states.get(SWITCH_TOU_STATE)
+        if not state:
+            logger.error("MQTT entity %s could not be accessed", SWITCH_TOU_STATE)
+            self.status = Status.FAULT
+            return
+        if state.state == "on":
+            tou = True
         logger.debug(
             "\n%sHey there. ToU switch state is %s and grist boost_mode is : %s%s",
             PURPLE,
@@ -325,11 +419,21 @@ class GristScheduler:
             self.boost_mode,
             RESET,
         )
-        if self.boost_mode in [BoostMode.AUTOMATIC, BoostMode.MANUAL, "manual"]:
+
+        # If boost mode is automatic or manual, we need to try to turn on the ToU switch.
+        # Since this is a critical operation, we need to ensure it succeeds.
+        counter = 0
+        if self.boost_mode in [BoostMode.AUTOMATIC, BoostMode.MANUAL]:
             while tou is False:
-                await set_switch(self.hass, entity_id=SWITCH_TOU_STATE, value=True)
+                await self.hass.services.async_call(
+                    "switch", "turn_on", {"entity_id": SWITCH_TOU_STATE}
+                )
                 await asyncio.sleep(5)
-                tou = await get_switch(self.hass, entity_id=SWITCH_TOU_STATE)
+                state = self.hass.states.get(SWITCH_TOU_STATE)
+                if not state:
+                    logger.error("MQTT entity %s could not be accessed", SWITCH_TOU_STATE)
+                    self.status = Status.FAULT
+                    return
                 logger.debug(
                     "\n%sWhile ToU is False loop: Now ToU is %s and grist boost_mode is : %s%s",
                     PURPLE,
@@ -337,24 +441,49 @@ class GristScheduler:
                     self.boost_mode,
                     RESET,
                 )
+                if state == "on":
+                    tou = True
+                counter += 1
+                if counter > 5:
+                    logger.error("Could not turn on ToU switch after 5 attempts")
+                    self.status = Status.FAULT
+                    return
 
         if self.boost_mode == BoostMode.OFF:
             while tou is True:
-                await set_switch(self.hass, entity_id=SWITCH_TOU_STATE, value=False)
+                await self.hass.services.async_call(
+                    "switch", "turn_off", {"entity_id": SWITCH_TOU_STATE}
+                )
                 await asyncio.sleep(5)
-                tou = await get_switch(self.hass, entity_id=SWITCH_TOU_STATE)
+                state = self.hass.states.get(SWITCH_TOU_STATE)
+                if not state:
+                    logger.error("MQTT entity %s could not be accessed", SWITCH_TOU_STATE)
+                    self.status = Status.FAULT
+                    return
                 logger.debug(
-                    "\n%sWhile ToU is True loop: Now ToU is %s and grist boost_mode is : %s%s",
+                    "\n%sTrying to turn off ToU mode: Now ToU is %s and grist boost_mode is : %s%s",
                     PURPLE,
                     tou,
                     self.boost_mode,
                     RESET,
                 )
+                if state == "off":
+                    tou = False
+                counter += 1
+                if counter > 5:
+                    logger.error("Could not turn off ToU switch after 5 attempts")
+                    self.status = Status.FAULT
+                    return
 
+        # If the switch setting worked, we should have no problems here. We won't doublecheck the setting.
         if self.boost_mode == BoostMode.AUTOMATIC:
-            await set_number(self.hass, NUMBER_CAPACITY_POINT_1, self.grist_calculated)
+            await self.hass.services.async_call(
+                "number", "set_value", {"entity_id": NUMBER_CAPACITY_POINT_1, "value": self.grist_calculated}
+            )
         elif self.boost_mode == BoostMode.MANUAL:
-            await set_number(self.hass, NUMBER_CAPACITY_POINT_1, self.grist_manual)
+            await self.hass.services.async_call(
+                "number", "set_value", {"entity_id": NUMBER_CAPACITY_POINT_1, "value": self.grist_manual}
+            )
 
         # Reset next start time to either the start of the next day or the desired refresh hour.
         if dt_util.now().hour < self.update_hour:
@@ -381,7 +510,7 @@ class GristScheduler:
             )
             return 0
 
-        if not self.daily:
+        if not self.calculated_stats:
             logger.warning(
                 "Calculations not complete, cannot calculate remaining battery time."
             )
@@ -395,7 +524,7 @@ class GristScheduler:
 
         # Get the current state of charge (SOC) and calculate remaining watt-hours
         soc = self.battery.state_of_charge
-        loads = self.daily.average_hourly_load if self.daily else {}
+        loads = self.calculated_stats.average_hourly_load if self.calculated_stats else {}
         remaining_wh = soc * self.battery.capacity_wh
 
         # Initialize remaining time
@@ -413,7 +542,7 @@ class GristScheduler:
         this_day = current_time.date().strftime("%Y-%m-%d")
         pv = self.forecaster.forecast_for_date(this_day)
         adjusted_pv = {
-            hour: pv.get(hour, 0) * self.daily.pv_performance_ratios.get(hour, 1.0)
+            hour: pv.get(hour, 0) * self.calculated_stats.pv_performance_ratios.get(hour, 1.0)
             for hour in range(24)
         }
         net_change = adjusted_pv.get(this_hour, 0) - loads.get(this_hour, 1000)
@@ -431,7 +560,7 @@ class GristScheduler:
                 pv = self.forecaster.forecast_for_date(this_day)
                 adjusted_pv = {
                     hour: pv.get(hour, 0)
-                    * self.daily.pv_performance_ratios.get(hour, 1.0)
+                    * self.calculated_stats.pv_performance_ratios.get(hour, 1.0)
                     for hour in range(24)
                 }
 
@@ -455,7 +584,9 @@ class GristScheduler:
         # logger.debug("Remaining battery time calculated: %d minutes", remaining_time)
         return remaining_time
 
-    async def to_dict(self,) -> dict[str, Any]:
+    async def to_dict(
+        self,
+    ) -> dict[str, Any]:
         """Return calculated data as a dictionary."""
 
         # First, check if hass is fully started. If not, return starting status.
@@ -463,11 +594,11 @@ class GristScheduler:
             logger.debug("Home Assistant is still starting...")
             return {"status": Status.STARTING}
 
-        # Check if the daily tasks need to be run.
-        await self._daily_tasks()
+        # Check if the major data update tasks need to be run.
+        await self._update()
 
         # If daily tasks triggered a fault, report that. We can't continue.
-        if self.status != Status.NORMAL:
+        if not self.forecaster or self.forecaster.status != Status.NORMAL:
             return {"status": Status.FAULT}
 
         # Check if the refresh boost task needs to be run.
@@ -475,61 +606,72 @@ class GristScheduler:
 
         # Refresh battery statistics on every call so we can calculate remaining battery time.
         await self.battery.update_data() if self.battery else None
+        self._mqtt_failures.log_failure(self.battery.status) if self.battery.status != Status.NORMAL else self._mqtt_failures.log_normal()
+
 
         # Initialize key data to send to sensors
         now = dt_util.now()
 
         # Make sure we have a valid live boost state from the inverter
-        boost_actual_state = await get_state(self.hass, NUMBER_CAPACITY_POINT_1)
-        if boost_actual_state is not None:
-            try:
-                boost_actual = int(round(float(boost_actual_state), 0))
-            except (ValueError, TypeError):
-                logger.warning(
-                    "GRIST actual value is invalid, using default value."
-                )
-                boost_actual = DEFAULT_GRIST_STARTING_SOC
-        else:
-            logger.warning("GRIST actual value is None, using default value.")
-            boost_actual = DEFAULT_GRIST_STARTING_SOC
+        state = self.hass.states.get(NUMBER_CAPACITY_POINT_1)
+        if not state:
+            logger.error("MQTT entity %s could not be accessed", NUMBER_CAPACITY_POINT_1)
+            self._mqtt_failures.log_failure(Status.MQTT_OFF)
+            return {"status": Status.FAULT}
+        try:
+            boost_actual = float(state.state) / 100
+        except (ValueError, TypeError):
+            logger.warning("Invalid state for entity %s: %s", NUMBER_CAPACITY_POINT_1, state.state)
+            self.status = Status.FAULT
+            self._mqtt_failures.log_failure(Status.MQTT_OFF)
+            return {"status": Status.FAULT}
 
         remaining_battery_time: int = await self._calculate_remaining_battery_time()
 
-        calculated_pv_now: int = self.daily.forecast_today_adjusted.get(now.hour, 0) if self.daily else 0
+        calculated_pv_now: int = (
+            self.calculated_stats.forecast_today_adjusted.get(now.hour, 0) if self.calculated_stats else 0
+        )
+
+        if self.battery is not None and self.battery.status == Status.NORMAL:
+            self._mqtt_failures.log_normal()
 
         # Return the dictionary with all the calculated data
         return {
-            "status": self.status.name if hasattr(self.status, "name") else str(self.status),
+            "status": self.status.name
+            if hasattr(self.status, "name")
+            else str(self.status),
             "forecaster_status": (
                 self.forecaster.status.name
                 if self.forecaster and hasattr(self.forecaster.status, "name")
-                else str(self.forecaster.status) if self.forecaster else "None"
+                else str(self.forecaster.status)
+                if self.forecaster
+                else "None"
             ),
             "battery_exhausted": (
-            now + timedelta(minutes=remaining_battery_time)
+                now + timedelta(minutes=remaining_battery_time)
             ).strftime("%a %-I:%M %p"),
             "battery_time_remaining": round(remaining_battery_time / 60, 1),
-            "actual": boost_actual if boost_actual is not None else "Unknown",
+            "actual": boost_actual,
             "manual": self.grist_manual,
             "mode": str(self.boost_mode).title() if self.boost_mode else None,
             "calculated": self.grist_calculated,
             "calculated_pv_now": calculated_pv_now,
             "day": f"{(now + timedelta(days=1)).strftime('%A')} the {ordinal((now + timedelta(days=1)).day)}",
             "load_days": self.days_of_load_history,
-            "load_averages": self.daily.average_hourly_load if self.daily else {},
-            "pv_ratios": self.daily.pv_performance_ratios if self.daily else {},
-            "pv_calculated_today": self.daily.forecast_today_adjusted
-            if self.daily
+            "load_averages": self.calculated_stats.average_hourly_load if self.calculated_stats else {},
+            "pv_ratios": self.calculated_stats.pv_performance_ratios if self.calculated_stats else {},
+            "pv_calculated_today": self.calculated_stats.forecast_today_adjusted
+            if self.calculated_stats
             else {},
-            "pv_calculated_today_total": self.daily.forecast_today_adjusted_total
-            if self.daily
+            "pv_calculated_today_total": self.calculated_stats.forecast_today_adjusted_total
+            if self.calculated_stats
             else 0,
             "pv_calculated_today_day": f"{now.strftime('%A')} the {ordinal(now.day)}",
-            "pv_calculated_tomorrow": self.daily.forecast_tomorrow_adjusted
-            if self.daily
+            "pv_calculated_tomorrow": self.calculated_stats.forecast_tomorrow_adjusted
+            if self.calculated_stats
             else {},
-            "pv_calculated_tomorrow_total": self.daily.forecast_tomorrow_adjusted_total
-            if self.daily
+            "pv_calculated_tomorrow_total": self.calculated_stats.forecast_tomorrow_adjusted_total
+            if self.calculated_stats
             else 0,
             "pv_calculated_tomorrow_day": f"{(now + timedelta(days=1)).strftime('%A')} the {ordinal((now + timedelta(days=1)).day)}",
             "update_hour": self.update_hour,

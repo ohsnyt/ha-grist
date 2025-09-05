@@ -42,7 +42,7 @@ from homeassistant.components.recorder.statistics import (
     StatisticsRow,
     statistics_during_period,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
 from .const import DEBUGGING
@@ -92,7 +92,7 @@ async def get_state(hass: HomeAssistant, entity_id: str) -> str | None:
         str | None: The state of the entity if it exists; otherwise, None.
 
     """
-    entity = await get_entity(hass, entity_id)
+    entity: dict[str, Any] | None = await get_entity(hass, entity_id)
     if entity:
         return entity["state"]
     return None
@@ -110,7 +110,7 @@ async def get_entity(hass: HomeAssistant, entity_id: str) -> dict[str, Any] | No
         last_changed, and last_updated if the entity exists; otherwise, None.
 
     """
-    state_obj = hass.states.get(entity_id)
+    state_obj: State | None = hass.states.get(entity_id)
     # logger.debug("State object for %s: %s", entity_id, state_obj)
     if not state_obj:
         logger.debug("Entity %s not found", entity_id)
@@ -155,6 +155,11 @@ async def get_state_as_float(
     return default
 
 
+async def mqtt_sum_states_starting_with(
+    hass: HomeAssistant, prefixes: list[str], default: float = 0.0
+) -> float:
+    return await sum_states_starting_with(hass, prefixes, default)
+
 async def sum_states_starting_with(
     hass: HomeAssistant, prefixes: list[str], default: float = 0.0
 ) -> float:
@@ -188,7 +193,9 @@ async def sum_states_starting_with(
             values.append(float(state))
 
     total = sum(values)
-    return total if total else default
+    if values:
+        return total
+    return default
 
 
 async def get_multiday_hourly_states(
@@ -337,7 +344,7 @@ async def get_historical_hourly_states(
     return historical_data
 
 
-async def get_number(
+async def mqtt_get_number(
     hass: HomeAssistant, entity_id: str, default: float = 0.0
 ) -> float:
     """Get the value of a number entity.
@@ -368,7 +375,7 @@ async def get_number(
     return default
 
 
-async def set_number(hass: HomeAssistant, entity_id: str, value: int) -> None:
+async def mqtt_set_number(hass: HomeAssistant, entity_id: str, value: int) -> None:
     """Set the value of a number entity.
 
     Args:
@@ -382,7 +389,7 @@ async def set_number(hass: HomeAssistant, entity_id: str, value: int) -> None:
     )
 
 
-async def get_switch(hass: HomeAssistant, entity_id: str) -> bool | None:
+async def mqtt_get_switch(hass: HomeAssistant, entity_id: str) -> bool | None:
     """Get the value of a switch entity.
 
     Args:
@@ -393,6 +400,11 @@ async def get_switch(hass: HomeAssistant, entity_id: str) -> bool | None:
         bool: The value of the state or None if not found.
 
     """
+    # Make sure MQTT is on
+    if "mqtt" not in hass.config.components:
+        logger.error("MQTT system is not running")
+        return None
+
     state = await get_entity(hass, entity_id)
     if state and "state" in state:
         try:
@@ -407,7 +419,7 @@ async def get_switch(hass: HomeAssistant, entity_id: str) -> bool | None:
     return None
 
 
-async def set_switch(hass: HomeAssistant, entity_id: str, value: bool) -> None:
+async def mqtt_set_switch(hass: HomeAssistant, entity_id: str, value: bool) -> None:
     """Set the value of a switch entity.
 
     Args:

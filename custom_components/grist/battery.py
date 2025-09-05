@@ -17,9 +17,9 @@ Constants:
 Dependencies:
     - homeassistant.core.HomeAssistant: Home Assistant core instance.
     - .const.Status: Enum for battery status.
-    - .hass_utilities.get_number: Utility to fetch a number entity from Home Assistant.
-    - .hass_utilities.get_state_as_float: Utility to fetch a sensor state as float.
-    - .hass_utilities.sum_states_starting_with: Utility to sum sensor states with a given prefix.
+    - .hass_utilities.mqtt_get_number: Utility to fetch a number entity from Home Assistant.
+    - .hass_utilities.mqtt_get_state_as_float: Utility to fetch a sensor state as float.
+    - .hass_utilities.mqtt_sum_states_starting_with: Utility to sum sensor states with a given prefix.
 
 Usage:
     Instantiate the Battery class with a Home Assistant instance to access battery
@@ -29,7 +29,7 @@ Usage:
 
 import logging
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 
 from .const import (
     DEBUGGING,
@@ -41,7 +41,6 @@ from .const import (
     SENSOR_BATTERY_SOC,
     Status,
 )
-from .hass_utilities import get_number, get_state_as_float, sum_states_starting_with
 
 logger: logging.Logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG if DEBUGGING else logging.INFO)
@@ -75,21 +74,60 @@ class Battery:
 
         Updates battery capacity, voltage, and SoC from Home Assistant sensor states.
         """
-        self._capacity_ah = int(
-            await sum_states_starting_with(
-                self.hass,
-                [SENSOR_BATTERY_CAPACITY],
-                default=DEFAULT_BATTERY_CAPACITY_AH,
-            )
-        )
-        self._full_voltage = await get_number(
-            self.hass, SENSOR_BATTERY_FLOAT_VOLTAGE, DEFAULT_BATTERY_FLOAT_VOLTAGE
-        )
-        self._battery_soc = (
-            await get_state_as_float(
-                self.hass, SENSOR_BATTERY_SOC, DEFAULT_BATTERY_MIN_SOC
-            )
-        ) / 100
+        if "mqtt" not in self.hass.config.components:
+            logger.error("MQTT system is not running")
+            self._status = Status.MQTT_OFF
+            return
+
+        battery_capacity_sensors = [
+            state.entity_id
+            for state in self.hass.states.async_all("sensor")
+            if state.entity_id.startswith(SENSOR_BATTERY_CAPACITY)
+        ]
+        if not battery_capacity_sensors:
+            logger.warning("No battery capacity sensors found.")
+            self._status = Status.NOT_CONFIGURED
+            return
+
+        temp_cap = 0.0
+        for entity in battery_capacity_sensors:
+            state: State | None = self.hass.states.get(entity)
+            if not state:
+                logger.error("MQTT entity %s could not be accessed", entity)
+                self._status = Status.FAULT
+                return
+            try:
+                temp_cap += float(state.state)
+            except (ValueError, TypeError):
+                logger.warning("Invalid state for entity %s: %s", entity, state.state)
+                self._status = Status.FAULT
+                return
+        self._capacity_ah = int(temp_cap)
+
+        state = self.hass.states.get(SENSOR_BATTERY_FLOAT_VOLTAGE)
+        if not state:
+            logger.error("MQTT entity %s could not be accessed", SENSOR_BATTERY_FLOAT_VOLTAGE)
+            self._status = Status.FAULT
+            return
+        try:
+            self._full_voltage = float(state.state)
+        except (ValueError, TypeError):
+            logger.warning("Invalid state for entity %s: %s", SENSOR_BATTERY_FLOAT_VOLTAGE, state.state)
+            self._status = Status.FAULT
+            return
+
+        state = self.hass.states.get(SENSOR_BATTERY_SOC)
+        if not state:
+            logger.error("MQTT entity %s could not be accessed", SENSOR_BATTERY_SOC)
+            self._status = Status.FAULT
+            return
+        try:
+            self._battery_soc = float(state.state) / 100
+        except (ValueError, TypeError):
+            logger.warning("Invalid state for entity %s: %s", SENSOR_BATTERY_SOC, state.state)
+            self._status = Status.FAULT
+            return
+
         self._status = Status.NORMAL
 
     @property
@@ -111,3 +149,8 @@ class Battery:
     def state_of_charge(self) -> float:
         """Return the battery state of charge as a fraction (0.0–1.0)."""
         return self._battery_soc
+
+    @property
+    def status(self) -> Status:
+        """Return the current status of the battery."""
+        return self._status

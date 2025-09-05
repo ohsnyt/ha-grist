@@ -24,7 +24,6 @@ Helper Functions:
 All I/O is asynchronous and compatible with Home Assistant's async patterns.
 """
 
-from datetime import datetime
 import logging
 import re
 from typing import Any

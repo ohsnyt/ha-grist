@@ -43,7 +43,6 @@ from ..const import (  # noqa: TID252
     DATE_FORMAT,
     DEBUGGING,
     DEFAULT_PV_MAX_DAYS,
-    DEFAULT_UPDATE_HOUR,
     FORECAST_KEY,
     FORECAST_SOLAR_API_URL,
     HRS_PER_DAY,
@@ -69,13 +68,11 @@ class ForecastSolar:
 
     # Constructor for ForecastSolar class.
     def __init__(
-        self, hass: HomeAssistant, update_hour: int = DEFAULT_UPDATE_HOUR
-    ) -> None:
+        self, hass: HomeAssistant) -> None:
         """Initialize ForecastSolar with Home Assistant instance and update hour.
 
         Args:
             hass: The Home Assistant instance.
-            update_hour: The hour of day to update the forecast (default: from const.py).
 
         """
         # General info
@@ -88,7 +85,6 @@ class ForecastSolar:
         self._unsub_update = None
         self._next_update = dt_util.now() + timedelta(minutes=-1)
         self._panel_configurations = {}
-        self.update_hour = update_hour
         self._name = "Forecast Solar"
 
         # Initialize storage
@@ -115,6 +111,8 @@ class ForecastSolar:
                 self._next_update = dt_util.as_local(dt)
             else:
                 self._next_update = dt_util.now() + timedelta(minutes=-1)
+            if self._next_update < dt_util.now():
+                await self.update_data()
             forecast_dates = list(self._forecast.keys())
             logger.debug("Loaded forecast data from storage: %s", forecast_dates)
         else:
@@ -131,14 +129,11 @@ class ForecastSolar:
         if self._next_update < dt_util.now():
             await self._get_new_data_from_forecasts_solar_api()
 
+        if self._status == Status.NOT_CONFIGURED:
+            return
+
         self._remove_old_forecasts()
 
-        logger.info(
-            "\n{%s}Retrieved Forecast.Solar forecast data for %d days%s",
-            PURPLE,
-            len(self._forecast),
-            RESET,
-        )
         for date, day_data in self._forecast.items():
             logger.debug(
                 "\n%s: %s",
@@ -156,32 +151,13 @@ class ForecastSolar:
                 }
             )
         self._status = Status.NORMAL
+        logger.info(
+            "\n%sRetrieved Forecast.Solar forecast data for %d days%s",
+            PURPLE,
+            len(self._forecast),
+            RESET,
+        )
 
-    async def _get_sum_sensors(self, sensor_prefix: str) -> float:
-        """Sum and return sensor values for all sensors starting with the given prefix.
-
-        Args:
-            sensor_prefix: The prefix of the sensor entity IDs to sum.
-
-        Returns:
-            The sum of all matching sensor values as a float.
-
-        """
-        # Sum the values from all sensors starting with sensor_prefix
-        sensor_value = 0.0
-        for state in self.hass.states.async_all("sensor"):
-            match state:
-                case _ if state.entity_id.startswith(sensor_prefix):
-                    try:
-                        sensor_value += (
-                            float(state.state) if state.state is not None else 0.0
-                        )
-                    except (TypeError, ValueError):
-                        logger.debug(
-                            "Non-numeric state for %s: %s", state.entity_id, state.state
-                        )
-                        continue
-        return sensor_value
 
     async def _get_new_data_from_forecasts_solar_api(self) -> None:
         """Fetch and sum forecasts for all panels by hour.
@@ -192,8 +168,14 @@ class ForecastSolar:
         """
         # First, get the current list of active solar panels
         self._panel_configurations = await self._fetch_active_panel_data()
+        if not self._panel_configurations:
+            logger.warning("No active panel configurations found for %s", self.name)
+            self._status = Status.NOT_CONFIGURED
+            return
+        logger.debug("We found %s panels: %s", len(self._panel_configurations), self._panel_configurations)
 
         # Then sum the results from each hour for every panel
+        found_data = False
         for panel in self._panel_configurations.values():
             data = await self._call_api_for_one_panel(panel)
             if not data:
@@ -207,8 +189,9 @@ class ForecastSolar:
                 next(iter(watt_hours_day)).split(" ")[0] if watt_hours_period else None
             )
             if forecast_date_str is None:
-                logger.warning("No forecast date found in data for panel %s", panel)
+                logger.warning("No forecast data found in data for panel %s", panel)
                 continue
+            found_data = True
             # Run through the watt_hours_day data to get the data for each hour of each day
             for dt_str, value in watt_hours_period.items():
                 if not dt_str.startswith(forecast_date_str):
@@ -223,7 +206,12 @@ class ForecastSolar:
                 day_data[hour] = int(value)
             # Record the last day's data
             self._forecast[forecast_date_str] = day_data
-        self._next_update = dt_util.now() + timedelta(hours=1)
+            logger.debug("Storing forecast data for %s", forecast_date_str)
+        if found_data is False:
+            self._status = Status.NOT_CONFIGURED
+        logger.debug("We found %s forecast data points", len(self._forecast))
+        logger.debug("We found forecast info: (T/F) %s", found_data)
+        self._next_update = dt_util.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
 
     async def _call_api_for_one_panel(self, panel: dict) -> dict:
         """Fetch forecast data for a single panel from the Forecast.Solar API.
@@ -254,7 +242,8 @@ class ForecastSolar:
                 logger.warning(
                     "\nRate limit hit, setting next update to %s", self._next_update
                 )
-                return await self._generate_mock_data()
+                self._status = Status.RATE_LIMITED
+                # return await self._generate_mock_data()
 
             return {}
 

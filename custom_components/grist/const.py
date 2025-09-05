@@ -9,6 +9,13 @@ All constants are intended to be imported and used by other modules in the integ
 
 from enum import Enum, StrEnum
 
+from homeassistant.loader import MQTT
+
+FORECASTER_INTEGRATIONS = [
+    "solcast_solar",
+    "forecast_solar",
+    "open_meteo_solar_forecast",
+]
 
 class Status(Enum):
     """Component status for the GRIST integration."""
@@ -17,6 +24,14 @@ class Status(Enum):
     FAULT = 1
     NORMAL = 2
     STARTING = 3
+    RATE_LIMITED = 4
+    MQTT_OFF = 5
+
+class MqttErrors(Enum):
+    """MQTT errors for the GRIST integration."""
+
+    ENTITY_NOT_FOUND = "Entity not found"
+    MQTT_OFF = "MQTT is off"
 
     @property
     def state(self) -> str:

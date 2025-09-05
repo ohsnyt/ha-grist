@@ -229,6 +229,11 @@ class DailyStats:
         """Return the total adjusted PV forecast for tomorrow."""
         return sum(self._forecast_tomorrow_adjusted.values())
 
+    @property
+    def status(self) -> Status:
+        """Return the current status of the statistics calculations."""
+        return self._status
+
 
 def performance_ratios(
     forecasted_pv: dict[str, dict[int, int]],
