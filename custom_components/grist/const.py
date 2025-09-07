@@ -9,8 +9,6 @@ All constants are intended to be imported and used by other modules in the integ
 
 from enum import Enum, StrEnum
 
-from homeassistant.loader import MQTT
-
 FORECASTER_INTEGRATIONS = [
     "solcast_solar",
     "forecast_solar",

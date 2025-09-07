@@ -17,9 +17,6 @@ Constants:
 Dependencies:
     - homeassistant.core.HomeAssistant: Home Assistant core instance.
     - .const.Status: Enum for battery status.
-    - .hass_utilities.mqtt_get_number: Utility to fetch a number entity from Home Assistant.
-    - .hass_utilities.mqtt_get_state_as_float: Utility to fetch a sensor state as float.
-    - .hass_utilities.mqtt_sum_states_starting_with: Utility to sum sensor states with a given prefix.
 
 Usage:
     Instantiate the Battery class with a Home Assistant instance to access battery

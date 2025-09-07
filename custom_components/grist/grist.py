@@ -13,7 +13,6 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
-import homeassistant.helpers.entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from .battery import Battery

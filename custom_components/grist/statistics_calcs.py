@@ -1,30 +1,37 @@
 """Calculated statistics for the GRIST integration.
 
-Provides the DailyStats class for managing and calculating photovoltaic (PV) and load
-statistics used by the GRIST integration. This includes calculating average hourly
-load, PV performance ratios, and adjusted PV forecasts for yesterday, today, and tomorrow.
+Provides async calculation and management of photovoltaic (PV) and load statistics
+for the GRIST integration, including average hourly load, PV performance ratios,
+and adjusted PV forecasts for yesterday, today, and tomorrow.
 
-All calculations are performed asynchronously and use Home Assistant's async patterns.
+All calculations are performed asynchronously and follow Home Assistant's update
+coordinator pattern for efficient polling and state updates.
 
 Classes:
     DailyStats: Manages and calculates PV and load statistics for GRIST.
 
 Functions:
     performance_ratios: Calculates hourly PV performance ratios based on historical data.
+    start_and_end_utc: Utility for calculating UTC start/end datetimes for statistics queries.
 
 Dependencies:
-    - homeassistant.core.HomeAssistant: Home Assistant core instance.
-    - .const: Integration constants and defaults.
-    - .forecast_solar, .hass_utilities, .meteo, .solcast: Forecast and utility modules.
+    - homeassistant.core.HomeAssistant
+    - .const
+    - .forecast_solar, .meteo, .solcast
 
 Usage:
     Instantiate DailyStats with a Home Assistant instance and call async_initialize()
     with a forecaster to populate statistics. Use properties to access calculated values.
 """
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 import logging
 
+from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.statistics import (
+    StatisticsRow,
+    statistics_during_period,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -42,7 +49,6 @@ from .const import (
 from .forecasters.forecast_solar import ForecastSolar
 from .forecasters.meteo import Meteo
 from .forecasters.solcast import Solcast
-from .hass_utilities import get_historical_hourly_states, get_multiday_hourly_states
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG if DEBUGGING else logging.INFO)
@@ -102,7 +108,7 @@ class DailyStats:
             range(HRS_PER_DAY), 0
         )
         self._status = Status.NOT_CONFIGURED
-        self._last_update = dt_util.now() - timedelta(days=1)
+        self._last_update = None
 
     async def async_initialize(
         self, forecaster: Solcast | Meteo | ForecastSolar
@@ -136,26 +142,17 @@ class DailyStats:
             return
 
         # Only update once per day
-        if dt_util.now().date() > self._last_update.date():
+        if self._last_update is None or dt_util.now().date() > self._last_update.date():
             forecasted_pv: dict[str, dict[int, int]] = forecaster.all_forecasts
-            soc: dict[str, dict[int, int]] = await get_historical_hourly_states(
-                self.hass, SENSOR_BATTERY_SOC, days=DEFAULT_PV_MAX_DAYS, default=0
-            )
-            actual_pv = await get_historical_hourly_states(
-                self.hass, SENSOR_PV_POWER, days=DEFAULT_PV_MAX_DAYS, default=0
-            )
+            soc: dict[str, dict[int, int]] = await self.get_historical_hourly_states(SENSOR_BATTERY_SOC, days=DEFAULT_PV_MAX_DAYS)
+            actual_pv = await self.get_historical_hourly_states(SENSOR_PV_POWER, days=DEFAULT_PV_MAX_DAYS)
             self._pv_performance_ratios = performance_ratios(
                 forecasted_pv,
                 soc,
                 actual_pv,
             )
 
-            self._average_hourly_load = await get_multiday_hourly_states(
-                self.hass,
-                SENSOR_LOAD_POWER,
-                days=self.days_load_history,
-                default=DEFAULT_LOAD_ESTIMATE,
-            )
+            self._average_hourly_load = await self.get_multiday_hourly_loads()
             logger.debug("Average hourly load: %s", self._average_hourly_load)
 
             now = dt_util.now()
@@ -188,6 +185,112 @@ class DailyStats:
 
             self._status = Status.NORMAL
             self._last_update = dt_util.now()
+
+    async def get_historical_hourly_states(self, entity_id: str, days: int) -> dict[str, dict[int, int]]:
+        """Fetch and format hourly statistics data for a given entity.
+
+        Args:
+            entity_id (str): The entity_id to fetch history for.
+            days (int): How many days of history to fetch.
+
+        Returns:
+            dict[str, dict[int, int]]: Dictionary mapping date strings to hourly values.
+
+        """
+        start, end = start_and_end_utc(days)
+        stats: dict[str, list[StatisticsRow]] = await get_instance(
+            self.hass
+        ).async_add_executor_job(
+            statistics_during_period,
+            self.hass,
+            start,
+            end,
+            {entity_id},
+            "hour",
+            None,
+            {"mean"},
+        )
+
+        data = stats.get(entity_id, [])
+        if not data:
+            logger.warning(
+                "No historical data found for entity %s over the last %d days.",
+                entity_id,
+                days,
+            )
+            return {}
+
+        historical_data: dict[str, dict[int, int]] = {}
+        for entry in data:
+            entry_start_value = entry.get("start")
+            if not isinstance(entry_start_value, (int, float)):
+                logger.warning(
+                    "Invalid start value for %s entry: %s", entity_id, entry_start_value
+                )
+                continue
+            entry_start_utc = datetime.fromtimestamp(entry_start_value, tz=UTC)
+            entry_start = dt_util.as_local(entry_start_utc)
+            date_str = entry_start.strftime("%Y-%m-%d")
+            hour = entry_start.hour
+            value = int(round(entry.get("mean", 0.0) or 0.0))
+            if date_str not in historical_data:
+                historical_data[date_str] = dict.fromkeys(range(HRS_PER_DAY), 0)
+            historical_data[date_str][hour] = value
+
+        return historical_data
+
+    async def get_multiday_hourly_loads(self) -> dict[int, int]:
+        """Fetch and calculate average hourly load over multiple days.
+
+        Returns:
+            dict[int, int]: Dictionary mapping hour to average load.
+
+        """
+        start, end = start_and_end_utc(self.days_load_history)
+        stats: dict[str, list[StatisticsRow]] = await get_instance(
+            self.hass
+        ).async_add_executor_job(
+            statistics_during_period,
+            self.hass,
+            start,
+            end,
+            {SENSOR_LOAD_POWER},
+            "hour",
+            None,
+            {"mean"},
+        )
+
+        data = stats.get(SENSOR_LOAD_POWER, [])
+        if not data:
+            logger.warning(
+                "No historical data found for entity %s over the last %d days.",
+                SENSOR_LOAD_POWER,
+                self.days_load_history,
+            )
+            return {}
+
+        # Use a fixed-size array for sums and counts for each hour
+        sums = [0.0] * HRS_PER_DAY
+        counts = [0] * HRS_PER_DAY
+
+        for entry in data:
+            start_value = entry.get("start")
+            if not isinstance(start_value, (int, float)):
+                logger.warning(
+                    "Invalid start value for %s entry: %s", SENSOR_LOAD_POWER, start_value
+                )
+                continue
+            hour = dt_util.as_local(datetime.fromtimestamp(start_value, tz=UTC)).hour
+            mean = entry.get("mean", 0.0) or 0.0
+            sums[hour] += mean
+            counts[hour] += 1
+
+        # Calculate integer mean per hour
+        return {
+            hour: int(round(sums[hour] / counts[hour])) if counts[hour] > 0 else 0
+            for hour in range(HRS_PER_DAY)
+        }
+
 
     @property
     def pv_performance_ratios(self) -> dict[int, float]:
@@ -261,7 +364,7 @@ def performance_ratios(
     hourly_ratios: dict[int, float] = dict.fromkeys(range(HRS_PER_DAY), 1.0)
     average_ratios = dict.fromkeys(range(HRS_PER_DAY), 0.0)
 
-    for day in range(1, HRS_PER_DAY):
+    for day in range(1, DEFAULT_PV_MAX_DAYS + 1):
         this_day = dt_util.now().replace(
             hour=0, minute=0, second=0, microsecond=0
         ) + timedelta(days=-day)
@@ -301,3 +404,28 @@ def performance_ratios(
         },
     )
     return average_ratios
+
+def start_and_end_utc(days=1) -> tuple[datetime, datetime]:
+    """Return UTC start and end datetimes for a given number of days of history.
+
+    The end time is yesterday at 23:59:59, and the start time is 'days' before midnight today.
+
+    Args:
+        days (int): The number of days of history to include.
+
+    Returns:
+        tuple[datetime, datetime]: A tuple containing the start and end datetimes.
+
+    """
+
+    # Subtracting one second from midnight today gives 23:59:59 of the previous day.
+    local_end_time = dt_util.now().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(seconds=1)
+    local_start_time = dt_util.now().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(days=days)
+    end_time = dt_util.as_utc(local_end_time)
+    start_time = dt_util.as_utc(local_start_time)
+
+    return start_time, end_time

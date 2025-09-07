@@ -61,25 +61,15 @@ The **GRIST Scheduler** custom component helps Home Assistant users minimize gri
 
 **docs-installation-parameters**: Mostly Done. (Need HACS instructions.)
 
-**entity-unavailable**: In Progress.  Now testing, but the issue is that the forecaster will not change status until the next time the forecaster tries to get data from it's api. We can't call this often because the apis have limits. This means it could take 12 hours until we find out the forecaster has "expired" and a new one is needed. There appears to be no way around this.
-
-- What:
-Entities must correctly report when they are unavailable (e.g., due to lost connection or missing data).
+**entity-unavailable**: Done.  However, the forecaster will not change status until the next time the forecaster tries to get data from it's api. We can't call this often because the apis have limits. This means it could take 12 hours until we find out the forecaster has "expired" and a new one is needed. This does not impact the operation of the integration since it is working on cached data, it just delays notification if the user removes the forecaster.
 
 **integration-owner**: Done.
 
-**log-when-unavailable**: VERIFY
-- What:
-Log a debug or warning message when an entity becomes unavailable.
-
-How:
-
-In your entity code, log when available changes to False.
-Add a test that simulates this and checks for the log message.
+**log-when-unavailable**: Done. Integration logs when communication with the battery, inverter and/or forecaster integration errors happen.
 
 **parallel-updates**: n/a
 
-**reauthentication-flow**: n/a. This integration does not rely on authentication. All external api calls are managed by the forecast integrations, and those integrations are currently designed so they do not require authentication.
+**reauthentication-flow**: n/a.
 
 **test-coverage**: *todo*
 What:
