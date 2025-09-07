@@ -325,8 +325,7 @@ class GristScheduler:
             await self.calculated_stats.update_data(self.forecaster)
             await self.battery.update_data()
             if self.battery is not None:
-                if self.battery is not None:
-                    self._mqtt_failures.log_failure(self.battery.status) if self.battery.status != Status.NORMAL else self._mqtt_failures.log_normal()
+                self._mqtt_failures.log_failure(self.battery.status) if self.battery.status != Status.NORMAL else self._mqtt_failures.log_normal()
 
             if self.forecaster.status == Status.NORMAL and self.calculated_stats.status == Status.NORMAL and self.battery.status == Status.NORMAL:
                 self.status = Status.NORMAL
@@ -594,25 +593,7 @@ class GristScheduler:
             logger.debug("Home Assistant is still starting...")
             return {"status": Status.STARTING}
 
-        # Check if the major data update tasks need to be run.
-        await self._update()
-
-        # If daily tasks triggered a fault, report that. We can't continue.
-        if not self.forecaster or self.forecaster.status != Status.NORMAL:
-            return {"status": Status.FAULT}
-
-        # Check if the refresh boost task needs to be run.
-        await self._refresh_boost()
-
-        # Refresh battery statistics on every call so we can calculate remaining battery time.
-        await self.battery.update_data() if self.battery else None
-        self._mqtt_failures.log_failure(self.battery.status) if self.battery.status != Status.NORMAL else self._mqtt_failures.log_normal()
-
-
-        # Initialize key data to send to sensors
-        now = dt_util.now()
-
-        # Make sure we have a valid live boost state from the inverter
+        # Make sure MQTT is running and we have a valid live boost state from the inverter
         state = self.hass.states.get(NUMBER_CAPACITY_POINT_1)
         if not state:
             logger.error("MQTT entity %s could not be accessed", NUMBER_CAPACITY_POINT_1)
@@ -625,6 +606,27 @@ class GristScheduler:
             self.status = Status.FAULT
             self._mqtt_failures.log_failure(Status.MQTT_OFF)
             return {"status": Status.FAULT}
+        else:
+            self._mqtt_failures.log_normal()
+            self.status = Status.NORMAL
+
+        # Check if the major data update tasks need to be run.
+        await self._update()
+
+        # If daily tasks triggered a fault, report that. We can't continue.
+        if not self.forecaster or self.forecaster.status != Status.NORMAL:
+            return {"status": Status.FAULT}
+
+        # Check if the refresh boost task needs to be run.
+        await self._refresh_boost()
+
+        # Refresh battery statistics on every call so we can calculate remaining battery time.
+        await self.battery.update_data() if self.battery else None
+        if self.battery is not None:
+            self._mqtt_failures.log_failure(self.battery.status) if self.battery.status != Status.NORMAL else self._mqtt_failures.log_normal()
+
+        # Initialize key data to send to sensors
+        now = dt_util.now()
 
         remaining_battery_time: int = await self._calculate_remaining_battery_time()
 
