@@ -41,13 +41,10 @@ from ..const import (  # noqa: TID252
     DEBUGGING,
     DEFAULT_PV_MAX_DAYS,
     FORECAST_KEY,
-    PURPLE,
-    RESET,
     SENSOR_METEO_BASE,
     STORAGE_VERSION,
     Status,
 )
-from ..hass_utilities import find_entities_by_prefixes, get_entity  # noqa: TID252
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG if DEBUGGING else logging.INFO)
@@ -124,17 +121,23 @@ class Meteo:
             logger.debug("Next update not due yet")
             return
 
-        forecast_prefixes = [SENSOR_METEO_BASE]
-        forecast_days_ids = await find_entities_by_prefixes(
-            self.hass, forecast_prefixes
-        )
-        if not forecast_days_ids:
+        entities = []
+        sensor_list = [SENSOR_METEO_BASE]
+        all_entities = self.hass.states.async_all("sensor")
+        for prefix in sensor_list:
+            entities.extend(
+                state.entity_id
+                for state in all_entities
+                if state.entity_id.startswith(prefix)
+            )
+
+        if not entities:
             logger.error("No Meteo forecast found")
             self._status = Status.FAULT
             return
 
         results = await asyncio.gather(
-            *(self._process_forecast_day(day) for day in forecast_days_ids),
+            *(self._process_forecast_day(day) for day in entities),
             return_exceptions=True,
         )
         if not all(results):
@@ -157,12 +160,12 @@ class Meteo:
             True if processing was successful, False otherwise.
 
         """
-        result = await get_entity(hass=self.hass, entity_id=entity_id)
+        result = self.hass.states.get(entity_id)
         if not result:
             logger.error("No Meteo forecast data found for %s", entity_id)
             return False
 
-        attributes = result.get("attributes")
+        attributes = result.attributes
         if not attributes:
             logger.debug(
                 "No attributes found for %s. Probably a daily total.", entity_id
