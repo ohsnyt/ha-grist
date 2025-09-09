@@ -6,29 +6,29 @@ rules:
   common-modules: done
   config-flow-test-coverage: todo
   config-flow: done
-  dependency-transparency: todo
-  docs-actions: todo
-  docs-high-level-description: todo
+  dependency-transparency: done
+  docs-actions: n/a
+  docs-high-level-description: done
   docs-installation-instructions: todo
-  docs-removal-instructions: todo
-  entity-event-setup: todo
+  docs-removal-instructions: done
+  entity-event-setup: n/a
   entity-unique-id: done
   has-entity-name: done
-  runtime-data: todo
-  test-before-configure: todo
-  test-before-setup: todo
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
   unique-config-entry: todo
 
   # Silver
-  action-exceptions: todo
+  action-exceptions: n/a
   config-entry-unloading: todo
-  docs-configuration-parameters: todo
+  docs-configuration-parameters: done
   docs-installation-parameters: todo
-  entity-unavailable: todo
-  integration-owner: todo
-  log-when-unavailable: todo
-  parallel-updates: todo
-  reauthentication-flow: todo
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done
+  parallel-updates: n/a
+  reauthentication-flow: n/a
   test-coverage: todo
 
   # Gold
