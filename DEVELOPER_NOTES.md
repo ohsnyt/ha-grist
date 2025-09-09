@@ -6,7 +6,8 @@ The **GRIST Scheduler** custom component helps Home Assistant users minimize gri
 
   **Solar Assistant** is required. (Solar Assistant provides sensor data for actual PV data as well as manages Time of Use settings for the inverter.)
 
-  **Sol-Ark Inverter**. This has only been tested with a Sol-Ark 12K2P inverter. I assume it will work with any Deye based inverter. *I invite your feedback, both positive and negative.*
+  **Sol-Ark Inverter**. This has only been tested with a Sol-Ark 12K2P inverter. I assume it will work with any Deye based inverter. *I invite your feedback, both positive and negative.*'
+  
 - Code is formatted with Ruff and linted with PyLint/MyPy.
 - All I/O is async; no blocking calls.
 - Follows Home Assistant's update coordinator and config flow patterns.
@@ -17,19 +18,19 @@ The **GRIST Scheduler** custom component helps Home Assistant users minimize gri
 
 ### Bronze
 
-**action-setup**: Done. This integration does not expose anyuser-triggerable actions; all actions are handled internally based onconfiguration options.
+**action-setup**: n/a. This integration does not expose anyuser-triggerable actions; all actions are handled internally based onconfiguration options.
 
 **brands**: *todo*
 
-**common-modules**: Done. I have functions that are similar to thebuild-in functions, but provide error checking and default values. Theprevents the need to duplicate error checking when those functions areused in different places in my code. For example, I have a helperfunction called get_state which returns the state of an entity (asopposed to the entity with the associated state, attributes, etc.). Ifthe entity is not present or fails in some way, this helper functionmanages those error conditions.
+**common-modules**: Done. I have functions that are similar to the build-in functions, but provide error checking and default values. This prevents the need to duplicate error checking when those functions areused in different places in my code. For example, I have a helper function called get_state which returns the state of an entity (asopposed to the entity with the associated state, attributes, etc.). If the entity is not present or fails in some way, this helper function manages those error conditions.
 
 **config-flow**: Done. Options are set through a series of formsdesigned to make setup as easy as possible (given the limitations onHome Assistant forms).
 
 **config-flow-test-coverage**: *todo* (having trouble getting pytestto run in my docker instance. Will have to try again with a newinstance.)
 
-**dependency-transparency**: Done. This integration is dependant uponthe home assistant statistics recorder as well as MQTT integration. Itfurther depends upon Solar Assistant, an external hardware/softwaresystem to supply sensor information necessary for this integration.Also required is one of three other integrations to supply solarforcast information**: Solcast, Meteo or Forecast.Solar. See thedocumentation for details.
+**dependency-transparency**: Done. This integration is dependant upon the home assistant statistics recorder as well as MQTT integration. It further depends upon Solar Assistant, an external hardware/softwaresystem to supply sensor information necessary for this integration. Also required is one of three other integrations to supply solarforcast information**: Solcast, Meteo or Forecast.Solar. See the documentation for details.
 
-**docs-actions**: Done. This integration does not expose anyuser-triggerable actions; all actions are handled internally based onconfiguration options.
+**docs-actions**: n/a. This integration does not expose any user-triggerable actions; all actions are handled internally based on configuration options.
 
 **docs-high-level-description**: Done.
 
@@ -49,7 +50,7 @@ The **GRIST Scheduler** custom component helps Home Assistant users minimize gri
 
 **test-before-setup**: Done. See test-before-configure.
 
-**unique-config-entry**: Done. This entity is a singe-instance integration and follows the idiomatic and correct method to ensure that. Testing is incorporated. **But I am still waiting to figure out how to run pytest for home assistant within docker.**
+**unique-config-entry**: *Todo.* This entity is a singe-instance integration and follows the idiomatic and correct method to ensure that. Testing is incorporated. **But I am still waiting to figure out how to run pytest for home assistant within docker.**
 
 ## Silver
 
