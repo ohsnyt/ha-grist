@@ -32,6 +32,7 @@ import anyio
 from astral import LocationInfo
 from astral.sun import sun
 
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -176,7 +177,7 @@ class ForecastSolar:
 
         # Then sum the results from each hour for every panel
         found_data = False
-        for panel in self._panel_configurations.values():
+        for panel in self._panel_configurations:
             data = await self._call_api_for_one_panel(panel)
             if not data:
                 logger.warning("No data returned for panel %s", panel)
@@ -223,6 +224,11 @@ class ForecastSolar:
             The parsed API response as a dictionary, or mock data if enabled or on error.
 
         """
+        if self.status == Status.RATE_LIMITED:
+            # If we are currently rate limited, skip the API call
+            logger.warning("Currently rate limited, skipping API call for panel %s", panel)
+            return {}
+
         url = (
             f"{FORECAST_SOLAR_API_URL}{panel['lat']}/{panel['lon']}/"
             f"{panel['dec']}/{panel['az']}/{panel['kwp']}"
@@ -247,7 +253,7 @@ class ForecastSolar:
 
             return {}
 
-    async def _fetch_active_panel_data(self) -> dict:
+    async def _fetch_active_panel_data(self) -> list:
         """Fetch and return active solar panel configuration data from Home Assistant storage.
 
         Reads Home Assistant's config and energy storage files to determine which
@@ -257,57 +263,26 @@ class ForecastSolar:
             Dictionary mapping entry_id to panel configuration.
 
         """
-        # First, get the config entries for forecast_solar from the Home Assistant config_entries json file
-        # (This defines the panel characteristics)
-        async with await anyio.open_file(
-            CORE_CONFIG_STORAGE,
-            "r",
-            encoding="utf-8",
-        ) as f:
-            config_data = json.loads(await f.read())
-            config_entries = config_data["data"]["entries"]
-        # Then, get the solar forecast config entries from the energy storage file
-        # (This defines which panels are active)
-        async with await anyio.open_file(
-            CORE_ENERGY_STORAGE, "r", encoding="utf-8"
-        ) as f:
-            energy_data = json.loads(await f.read())
-            energy_sources = energy_data["data"]["energy_sources"]
-        # Filter the config entries to get only those that are solar forecast entries
-        solar_forecast_id_lists = [
-            source.get(CORE_FORECAST_FILTER, [])
-            for source in energy_sources
-            if source["type"] == "solar"
-        ]
-        if not solar_forecast_id_lists:
-            logger.warning("No solar sources found in energy configuration.")
-            return {}
-
-        # Flatten the list of lists to a single list of solar forecast IDs
-        solar_forecast_ids = solar_forecast_id_lists[0]
-        # Get the lat and lon from the zone.home entity, since it is not available in the config entries
-        lat = 0.0
-        lon = 0.0
-        state = self.hass.states.get("zone.home")
-        if state is not None:
-            lat = state.attributes.get("latitude", 0.0)
-            lon = state.attributes.get("longitude", 0.0)
+        # Get all config entries to look for energy sources
+        all_entries: list[ConfigEntry] = self.hass.config_entries.async_entries()
+        # Look for forecast_solar config entries with state LOADED
+        config_entries = [entry.as_dict() for entry in all_entries if entry.domain == "forecast_solar" and entry.state == ConfigEntryState.LOADED]
+        if not config_entries:
+            logger.warning("No forecast_solar config entries found. Please set up your forecast_solar integration.")
+            return []
 
         # Create and return a list of the required data for the api calls
-        forecast_solar_entries = [
+        return [
             {
                 "entry_id": entry["entry_id"],
                 "kwp": (entry["options"].get("modules_power") or 0) / 1000.0,
-                "lat": lat,
-                "lon": lon,
+                "lat": entry["data"].get("latitude", 0.0),
+                "lon": entry["data"].get("longitude", 0.0),
                 "dec": entry["options"].get("declination"),
                 "az": entry["options"].get("azimuth"),
             }
             for entry in config_entries
-            if entry["domain"] == "forecast_solar"
-            and entry["entry_id"] in solar_forecast_ids
         ]
-        return {entry["entry_id"]: entry for entry in forecast_solar_entries}
 
     async def _generate_mock_data(self) -> dict:
         """Generate mock Forecast.Solar API data for development and testing.
