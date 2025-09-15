@@ -126,7 +126,7 @@ class DailyStats:
         self._status = Status.NOT_CONFIGURED
         logger.debug("Unloaded DailyStats entry")
 
-    async def update_data(self, forecaster: Solcast | Meteo | ForecastSolar) -> None:
+    async def update_data(self, forecaster: Solcast | Meteo | ForecastSolar | None) -> None:
         """Fetch and process daily statistics from Home Assistant and forecast services.
 
         Updates PV performance ratios, average hourly load, and adjusted PV forecasts
@@ -383,7 +383,7 @@ def performance_ratios(
             actual_pv_hour = actual_pv[this_day_str].get(hour)
             if forecasted_pv_hour is None or soc_hour is None or actual_pv_hour is None:
                 continue
-            if forecasted_pv_hour > 0 and soc_hour < 98:
+            if forecasted_pv_hour > 0 and soc_hour > 98:
                 hourly_ratios[hour] = actual_pv_hour / forecasted_pv_hour
             else:
                 hourly_ratios[hour] = 1.0

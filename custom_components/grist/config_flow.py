@@ -40,8 +40,6 @@ from .const import (
     HISTORY_MIN,
     HOUR_MAX,
     HOUR_MIN,
-    PURPLE,
-    RESET,
     BoostMode,
 )
 
