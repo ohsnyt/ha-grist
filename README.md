@@ -4,18 +4,34 @@
 
 The scheduler automatically determines how much to charge the battery during off-peak hours, aiming to avoid grid usage during expensive peak times. It adapts to changing weather and load conditions using solar forecasts and historical consumption data, and provides manual override options for special circumstances.
 
-**NOTE: Version 1.0.0 only works with batteries that are managed by State of Charge (not voltage).** For the Sol-Ark and Deye inverters, this is called Lithium batteries of Type 00. Subsequent versions may include manage voltage levels instead of state of charge. Let me know if this is important to you.'
+**NOTE: Version 1.0.0 only works with batteries that are managed by State of Charge (not voltage).** Subsequent versions may include manage voltage levels instead of state of charge. Let me know if this is important to you.'
 
-**NOTE**: Installing this integration and using the mode to either Automatic or Manual will turn On the Time of Use feature in your inverter.
+**Be Aware**: Installing this integration and setting the mode to either Automatic or Manual will turn On the Time of Use feature in your inverter.
+
+## Pros and Cons
+
+Pros:
+
+- You will use signficantly less energy from the Grid and your energy bills will be lower.
+- You will have a good idea how long your battery charge will run your loads.
+
+Cons:
+
+- You won't have a great excuse to buy more batteries.
+- You need a specific brand of inverter.[^brands]
+- You need to buy and install Solar Assistant.
+- You will have to take some time to set this up.
+
+[^brands] Currently, only Sol-Ark (Deye-based) inverters are supported. Why? That is the inverter I own. I just don't have access to other inverters to test. Support for additional inverter brands may be added in future releases. Let me know if there is interest.
 
 ## Features
 
 - **Automatic Grid Boost Calculation:**
-  Calculates the required battery charge (SoC) for off-peak charging based on solar forecasts, historical load, and PV performance.
+  Calculates the required battery State of Charge (SoC) for off-peak charging based on solar forecasts, historical load, and PV performance.
 - **Manual Override:**
-  Allows users to manually set the grid boost SoC target.
+  Allows users to manually set the grid boost SoC target for unusual conditions like snow covering your panels.
 - **PV Forecast Integration:**
-  Fetches and automatically adjusts solar production forecasts based on actual PV performance.
+  Allows you to select any of three alternative PV forecasting integrations, and automatically adjusts solar production forecasts based on actual PV performance.
 - **Historical Data Integration:**
   Tracks and averages load and PV production using Home Assistant sensors in order to optimize calculations as seasonal changes occur or system changes are introduced.
 - **Battery and PV Monitoring:**
@@ -23,19 +39,19 @@ The scheduler automatically determines how much to charge the battery during off
 - **Custom Sensors:**
   Exposes calculated values and statistics as Home Assistant sensor entities so you can display key information on your dashboards.
 - **Configurable Options:**
-  All key options (modes, off-peak start and stophours, SoC targets, forecast update hour, history days, minimum SoC) are configurable via the UI.
+  All key options (modes, off-peak start and stop hours, SoC targets, forecast update hour, history days, minimum SoC) are configurable via the normal Home Assistant configuration process.
 - **Extensible Forecast Support:**
-  Supports multiple forecast providers:[Solcast]([https://solcast.com](https://github.com/BJReplay/ha-solcast-solar), [Forecast.solar](https://forecast.solar/),and [Meteo](https://github.com/rany2/ha-open-meteo-solar-forecast).
+  Supports multiple forecast providers: [Solcast](https://github.com/BJReplay/ha-solcast-solar), [Forecast.solar](https://forecast.solar/),and [Meteo](https://github.com/rany2/ha-open-meteo-solar-forecast). (Solcast and Meteo require installing custom integrations using HACS.)
 - **Multiple modes:**
-  Supports the following modes: *Automatic*, *Manual*, *Testing*, and *Off*. *Automatic* mode manages grid boost daily. *Manual* mode allows you to set a specific boost amount, which could be helpful for days when you know your usage will signficantly differ from your normal patterns of use (or when you know your panels will be covered with snow and produce little power even though the forecast expects sun). *Testing* mode allows you to watch what the system will do, but will not actually change the Time of Use settings of your inverter. *Off* operates in the same ways as *testing* - it is just for peace of mind so you realize it will not affect your inverter.
+  Supports the following modes: *Automatic*, *Manual*, *Testing*, and *Off*. *Automatic* mode manages grid boost daily. *Manual* mode allows you to set a specific boost amount, which could be helpful for days when you know your usage will signficantly differ from your normal patterns of use (or when you know your panels will be covered with snow and produce little power even though the forecast expects sun). *Testing* mode allows you to watch what the system will do, but will not actually change the Time of Use settings of your inverter. *Off* operates similar to *testing*, but also will turn off the time of use setting on your inverter.
 - **Low overhead:**
   The system is designed to minimize the use of system resources.
 
 ## How It Works
 
-Basically the system monitors PV forecasts, and compares forecasts to actual PV performance and actual loads to calculate the optimal state of charge that the battery should have starting at 6:00am.
+Basically the system monitors PV forecasts, and compares forecasts to actual PV performance and actual loads in order to calculate the optimal state of charge that the battery should have to carry you through the day with minimal grid use during the higher grid rates.
 
-Sol-Ark (Deye) inverters allow you to set six Time of Use slots where your battery will charge from the grid if the state of charge drops below the set value for that time slot. This integration sets the starting time of the first time slot (defaults to midnight) and sets the inverter state of charge setting for that period based on either the calculated (*automatic*) value, or the value you set for the *manual* mode. The start of the second slot marks the end of the off-peak charging time, and it defaults to 6am.
+Sol-Ark (Deye) inverters allow you to set six Time of Use slots where your battery will charge from the grid if the state of charge drops below the set value for that time slot. This integration sets the starting time of the first time slot (defaults to midnight) and sets the inverter state of charge setting for that period based on either the calculated (*automatic*) value, or the value you set for the *manual* mode. The grid boost will stop at the start of the second slot. This defaults to 6am.
 
 Solar Assistant, a Raspberry Pi based tool to monitory your solar system, provides both the data to this integration as well as a means to control the inverter settings. (Earlier verions of this integration used data from the deye (and later solark) cloud servers, however that proved signficantly less reliable.)
 
@@ -44,47 +60,49 @@ I have found that the performance of my solar panels varies from season to seaso
 ### Data Collection and Forecasting
 
 - **Solar Forecasts:**
-  GRIST fetches hourly solar production forecasts from supported APIs. These are updated twice daily; just past midnight local time, and at a configurable hour (default: 22:00 local time).
+  GRIST fetches hourly solar production forecasts from supported APIs. These are updated just a few times each day but particularly past midnight local time, and at a configurable hour (default: 22:00 local time). The midnight forecast is focused on historical performance calculation accuracy and the user-configurable hour is focused on calculations for the next day boost setting.
 
 - **PV History:**
-  GRIST tracks a rollling 21 day history of PV forecasts to compare forecasts to actual performance. This allows for more precise automatic adjustments of forecasts specific to your system, local shading, etc.
+  GRIST tracks a rolling 21 day history of PV forecasts to compare forecasts to actual performance. This allows for more precise automatic adjustments of forecasts specific to your system, local shading, etc.
 
   **Load History**
-  GRIST monitors recent load usage for each hour of the day, computing averages for each hour so that it can calculate how your battery will likely perform through the coming day given the forecast for solar power and the actual recent performance of your panels.
+  GRIST monitors recent load usage for each hour of the day, computing averages for each hour so that it can calculate how your battery will likely perform through the coming day given the forecast for solar power and the actual recent performance of your panels. As user, you can set how many days of history you want to use to calculate load averages (1-10).
 
 ### Calculations
 
 - **Required Boost Calculation:**
-  Each day, the scheduler compares the adjusted solar forecast for tomorrow with the average load for each hour. It calculates the net deficit (when load exceeds PV) and determines the required battery boost percentage to cover expected shortfalls. This minimum requirement is added to a "buffer" the user sets so that there is always some reserve for those days when extra consumption occurs. This minimum buffer value is clamped between 5% and 99%.
+  Each day, the scheduler compares the adjusted solar forecast for tomorrow with the average load for each hour. It calculates the net deficit (when load exceeds PV) and determines the required battery boost percentage to cover expected shortfalls. This minimum requirement is added to a "buffer" (minimum state of charge) that you set so that there is always some reserve for those days when extra consumption occurs.
 
 - **Automatic PV Forecast Adjustment:**
   The forecasted PV for tomorrow is adjusted using the ratio of actual to forecast PV from the past 21 days, improving accuracy. This is important if you have shaded conditions during parts of the day, or if you have (for example) some panels facing east and some facing west. Most free teir forecasts do not allow you to specify multiple panel arrays, but the ratio is an elegent solution to account for this situation.
 
+  **Note**: The Forecast_Solar integration uses the solar panels that you specify in the Energy configuration dashboard. This does allow you to specify separate south-facing vs east-facing panels, for example. Due to the automatic PV forecast adjustment, you probably do not need to actually list all the different panels. Just list your total PV array capacity and let the automatic feature figure how it actually performs for each hour of each day.
+
 ### Sensors Exposed
 
-- **Calculated Grid Boost SoC:**
-  Automatically calculated battery charge target for off-peak charging.
-
 - **Actual Grid Boost SoC:**
-  Actual grid boost setting applied to the inverter. (If you are
+  Actual grid boost setting for time of use slot 1 on your inverter.
+
+- **Calculated Grid Boost SoC:**
+  Automatically calculated grid boost target for off-peak charging. (Only used in the automatic mode.)
 
 - **Manual Grid Boost SoC:**
-  Manually set battery charge target, if override is active.
+  Manually value for grid boost. (Only used when in the manual mode.)
 
 - **Battery Time Remaining:**
-  Estimated hours of battery power remaining at current load.
+  Estimated hours of battery power remaining. This is based on the current state of charge, expected PV generation, and the average hourly loads that you should see.
+
+- **Estimated PV Power:**
+  Current hour estimated PV power output as adjusted based on your system performance. (This will probably be different from the raw forecasted PV power for this hour.)
 
 - **Scheduler Entity:**
   Summarizes the current mode (automatic/manual), boost settings, load history days, and forecast values.
-
-- **Estimated PV Power:**
-  Current estimated PV power output as adjusted based on your system performance.
 
 - **Load Entity:**
   Presents the average hourly load over the selected history period.
 
 - **PV Ratio Entity:**
-  Shows the calculated shading/extra ratio for each hour, based on PV performance.
+  Presents the calculated shading/extra ratio for each hour, based on PV performance.
 
 ## Configuration
 
@@ -93,11 +111,12 @@ I have found that the performance of my solar panels varies from season to seaso
 **Prerequisites:**
   To use the integration, you must have:
 
-- Home Assistant with the MQTT integration installed.
 - a Sol-Ark (or Deye based) inverter,
-- an LFP (Lithium Iron Phosphate, or LiFePo4) battery that is able to report it's state of charge to the inverter, and
-- Solar Assistant monitoring your inverter and batteries, with MQTT turned on and reporting real-time data to your instance of Home Assistant
+- an LFP (Lithium Iron Phosphate, or LiFePo4) battery that is able to report it's state of charge to the inverter,
+- Solar Assistant monitoring your inverter and batteries, with MQTT turned on and reporting real-time data
+- Home Assistant,
 - network connection between Solar Assistant and your Home Assistant systems
+- the MQTT integration installed on Home Assistant and pointing to Solar Assistant as the MQTT broker.
 
 In addition you must install one of three solar forecaster tools:
 
@@ -139,6 +158,8 @@ To remove GRIST, Go to Settings/Devices & Services/GRIST. Using the three vertic
 If you want to turn off the Time of Use feature on your inverter, you should first click on the CONFIGURE button and set the Boost Mode to Off. You will need to confirm that choice, continue on to the details form, and Save. This will turn off the Time of Use mode through Solar Assistant. You can then remove GRIST.
 
 ## Notes
+
+I think that the best forecaster is the one that uses Solcast data. If you want to use this forecaster, follow the instructions in the [Solcast](https://github.com/BJReplay/ha-solcast-solar) custom integration. You will need to register for a free Solcast api key to use this forecaster.
 
 As mentioned above, there are six Time of Use slots in a Deye (Sol-Ark) inverter. GRIST turns on the Time of Use feature, manages slot 1 start time and state of charge value, and sets the start time of slot 2. (Your inverter will also let you set the power level used from the grid. GRIST does not that.)
 
