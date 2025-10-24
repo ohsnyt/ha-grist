@@ -1,6 +1,8 @@
-# GRIST, the Grid Boost Scheduler for Home Assistant
+# GRIST, the Grid Boost Scheduler
 
-**GRIST** helps Home Assistant users minimize grid electricity costs by intelligently managing battery charging and solar usage in homes equipped with solar panels and battery storage.
+<img src="../images/logo.png" alt="GRIST Logo" width="50%" style="display: block; margin: auto; ">
+
+**GRIST** helps Home Assistant users with grid-connected solar installations minimize grid electricity costs by intelligently managing battery charging and solar usage in homes equipped with solar panels and battery storage.
 
 The scheduler automatically determines how much to charge the battery during off-peak hours, aiming to avoid grid usage during expensive peak times. It adapts to changing weather and load conditions using solar forecasts and historical consumption data, and provides manual override options for special circumstances.
 
@@ -128,7 +130,7 @@ In addition you must install one of three solar forecaster tools:
 
 I use the Solcast tool because I like the unique feature it offers of allowing you to decide how pessimistic (or optimistic) you want the forecast to be. Solcast give a 10 percentile forecast (worst case), a 50 percentile forecast (most likely) and a 90% forecast (best case). When heavy but intermitted clouds are forecast, the spread between 10 and 90 percentile can be quite large. GRIST extrapolates those forecasts so you can choose any percentile you want between 10 and 90. Since I am optimizing to avoid using the grid after 6am, I normally use a 25 percentile figure. (I'm not TOTALLY pessimistic!!!)
 
-![Diagram of GRIST components](./custom_components/grist/GRIST-diagram.png)
+<img src="../images/GRIST-diagram.png" alt="Diagram of GRIST components" width="50%" style="display: block; margin: auto; ">
 
 **Install the Integration:**
    TODO: HACS installation instructions and link to page

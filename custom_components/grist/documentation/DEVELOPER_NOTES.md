@@ -1,5 +1,7 @@
 # Developer notes for GRIST, the Grid Boost Scheduler
 
+<img src="../images/logo.png" alt="GRIST Logo" width="500">
+
 The **GRIST Scheduler** custom component helps Home Assistant users minimize grid electricity costs by intelligently managing battery charging and solar usage in homes equipped with solar panels and battery storage. It is designed for systems where the battery can supply most or all of the home's daily electricity needs. The scheduler automatically determines how much to charge the battery during off-peak hours, aiming to avoid grid usage during expensive peak times. It adapts to changing weather and load conditions using solar forecasts and historical consumption data, and provides manual override options for special circumstances.
 
 ## Notes
@@ -7,7 +9,7 @@ The **GRIST Scheduler** custom component helps Home Assistant users minimize gri
   **Solar Assistant** is required. (Solar Assistant provides sensor data for actual PV data as well as manages Time of Use settings for the inverter.)
 
   **Sol-Ark Inverter**. This has only been tested with a Sol-Ark 12K2P inverter. I assume it will work with any Deye based inverter. *I invite your feedback, both positive and negative.*'
-  
+
 - Code is formatted with Ruff and linted with PyLint/MyPy.
 - All I/O is async; no blocking calls.
 - Follows Home Assistant's update coordinator and config flow patterns.
