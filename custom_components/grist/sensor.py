@@ -114,6 +114,15 @@ GRID_BOOST_SENSOR_ENTITIES: dict[str, OhSnytSensorEntityDescription] = {
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
     ),
+    "losses": OhSnytSensorEntityDescription(
+        key="losses",
+        icon="mdi:toilet",
+        name="Average Energy Losses",
+        native_unit_of_measurement="W",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+    ),
     "mode": OhSnytSensorEntityDescription(
         key="mode",
         icon="mdi:battery",

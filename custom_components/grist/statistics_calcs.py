@@ -36,12 +36,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DEBUGGING,
+    # DEBUGGING,
     DEFAULT_LOAD_AVERAGE_DAYS,
     DEFAULT_LOAD_ESTIMATE,
     DEFAULT_PV_MAX_DAYS,
     HRS_PER_DAY,
+    SENSOR_BATTERY_POWER,
     SENSOR_BATTERY_SOC,
+    SENSOR_GRID_POWER,
     SENSOR_LOAD_POWER,
     SENSOR_PV_POWER,
     Status,
@@ -51,7 +53,8 @@ from .forecasters.meteo import Meteo
 from .forecasters.solcast import Solcast
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG if DEBUGGING else logging.INFO)
+# Set logging to debug for this module.
+logger.setLevel(logging.DEBUG)
 
 
 class DailyStats:
@@ -109,6 +112,7 @@ class DailyStats:
         )
         self._status = Status.NOT_CONFIGURED
         self._last_update = None
+        self._losses = 0.0
 
     async def async_initialize(
         self, forecaster: Solcast | Meteo | ForecastSolar
@@ -119,14 +123,17 @@ class DailyStats:
             forecaster: The forecasting service instance (Solcast, Meteo, or ForecastSolar).
 
         """
+        logger.debug(">>>Initializing DailyStats. Updating forecaster data.")
         await self.update_data(forecaster)
 
     async def async_unload_entry(self) -> None:
         """Unload resources held by DailyStats and reset status."""
         self._status = Status.NOT_CONFIGURED
-        logger.debug("Unloaded DailyStats entry")
+        logger.debug(">>>Unloaded DailyStats entry")
 
-    async def update_data(self, forecaster: Solcast | Meteo | ForecastSolar | None) -> None:
+    async def update_data(
+        self, forecaster: Solcast | Meteo | ForecastSolar | None
+    ) -> None:
         """Fetch and process daily statistics from Home Assistant and forecast services.
 
         Updates PV performance ratios, average hourly load, and adjusted PV forecasts
@@ -142,10 +149,21 @@ class DailyStats:
             return
 
         # Only update once per day
+        logger.debug(">>>Checking if we need to update DailyStats data")
         if self._last_update is None or dt_util.now().date() > self._last_update.date():
+            logger.debug(">>>Calculating average loss")
+            self._losses = await self.update_losses()
+            logger.debug(">>>Getting DailyStats data: forecasted PV")
             forecasted_pv: dict[str, dict[int, int]] = forecaster.all_forecasts
-            soc: dict[str, dict[int, int]] = await self.get_historical_hourly_states(SENSOR_BATTERY_SOC, days=DEFAULT_PV_MAX_DAYS)
-            actual_pv = await self.get_historical_hourly_states(SENSOR_PV_POWER, days=DEFAULT_PV_MAX_DAYS)
+            logger.debug(">>>Getting DailyStats data: historical SOC")
+            soc: dict[str, dict[int, int]] = await self.get_historical_hourly_states(
+                SENSOR_BATTERY_SOC, days=DEFAULT_PV_MAX_DAYS
+            )
+            logger.debug(">>>Getting DailyStats data: actual PV")
+            actual_pv = await self.get_historical_hourly_states(
+                SENSOR_PV_POWER, days=DEFAULT_PV_MAX_DAYS
+            )
+            logger.debug(">>>Regenerating performance ratios")
             self._pv_performance_ratios = performance_ratios(
                 forecasted_pv,
                 soc,
@@ -153,7 +171,7 @@ class DailyStats:
             )
 
             self._average_hourly_load = await self.get_multiday_hourly_loads()
-            logger.debug("Average hourly load: %s", self._average_hourly_load)
+            logger.debug(">>>Average hourly load: %s", self._average_hourly_load)
 
             now = dt_util.now()
             today_str: str = now.strftime("%Y-%m-%d")
@@ -186,7 +204,114 @@ class DailyStats:
             self._status = Status.NORMAL
             self._last_update = dt_util.now()
 
-    async def get_historical_hourly_states(self, entity_id: str, days: int) -> dict[str, dict[int, int]]:
+    async def update_losses(self) -> float:
+        """Fetch and calculate energy losses over multiple days."""
+        # Fetch PV and grid generation hourly statistics for the past history days
+        pv = await self.get_historical_hourly_states(
+            SENSOR_PV_POWER, days=self.days_load_history
+        )
+        grid = await self.get_historical_hourly_states(
+            SENSOR_GRID_POWER, days=self.days_load_history
+        )
+
+        # Fetch battery charge/discharge hourly statistics for the past history days
+        battery = await self.get_historical_hourly_states(
+            SENSOR_BATTERY_POWER, days=self.days_load_history
+        )
+
+        # Fetch load hourly statistics for the past history days
+        loads = await self.get_historical_hourly_states(
+            SENSOR_LOAD_POWER, days=self.days_load_history
+        )
+
+        # Calculate losses for each hour across all days
+        total_losses = 0.0
+        valid_hours = 0
+
+        # Get all unique dates that have any data
+        all_dates = (
+            set(pv.keys()) | set(grid.keys()) | set(battery.keys()) | set(loads.keys())
+        )
+
+        for date_str in all_dates:
+            for hour in range(HRS_PER_DAY):
+                # Check if all sensors have data for this hour
+                if (
+                    date_str not in pv
+                    or date_str not in grid
+                    or date_str not in battery
+                    or date_str not in loads
+                ):
+                    continue
+
+                pv_value = pv[date_str].get(hour)
+                grid_value = grid[date_str].get(hour)
+                battery_value = battery[date_str].get(hour)
+                load_value = loads[date_str].get(hour)
+
+                # Skip if any value is None
+                if any(
+                    v is None for v in [pv_value, grid_value, battery_value, load_value]
+                ):
+                    logger.debug(
+                        "Day %s hour %d: Missing sensor data - excluding from loss calculation",
+                        date_str,
+                        hour,
+                    )
+                    continue
+
+                # Type narrowing: assert values are not None after the check
+                assert pv_value is not None
+                assert grid_value is not None
+                assert battery_value is not None
+                assert load_value is not None
+
+                # Calculate generation: PV + grid + battery discharge (negative battery power)
+                generation = (
+                    pv_value + grid_value + (-battery_value if battery_value < 0 else 0)
+                )
+
+                # Calculate consumption: loads + battery charge (positive battery power)
+                consumption = load_value + (max(0, battery_value))
+
+                # Losses = generation - consumption
+                hourly_loss = generation - consumption
+                total_losses += hourly_loss
+                valid_hours += 1
+
+                logger.debug(
+                    "Day %s hour %d: gen=%d (pv=%d, grid=%d, batt_discharge=%d), "
+                    "cons=%d (load=%d, batt_charge=%d), loss=%d",
+                    date_str,
+                    hour,
+                    generation,
+                    pv_value,
+                    grid_value,
+                    -battery_value if battery_value < 0 else 0,
+                    consumption,
+                    load_value,
+                    max(0, battery_value),
+                    hourly_loss,
+                )
+
+        # Calculate average losses
+        if valid_hours > 0:
+            self._losses = total_losses / valid_hours
+            logger.debug(
+                "Calculated average losses: %.2f W (total=%.2f W over %d valid hours)",
+                self._losses,
+                total_losses,
+                valid_hours,
+            )
+        else:
+            self._losses = 0.0
+            logger.warning("No valid hours found for loss calculation")
+
+        return self._losses
+
+    async def get_historical_hourly_states(
+        self, entity_id: str, days: int
+    ) -> dict[str, dict[int, int]]:
         """Fetch and format hourly statistics data for a given entity.
 
         Args:
@@ -277,7 +402,9 @@ class DailyStats:
             start_value = entry.get("start")
             if not isinstance(start_value, (int, float)):
                 logger.warning(
-                    "Invalid start value for %s entry: %s", SENSOR_LOAD_POWER, start_value
+                    "Invalid start value for %s entry: %s",
+                    SENSOR_LOAD_POWER,
+                    start_value,
                 )
                 continue
             hour = dt_util.as_local(datetime.fromtimestamp(start_value, tz=UTC)).hour
@@ -290,7 +417,6 @@ class DailyStats:
             hour: int(round(sums[hour] / counts[hour])) if counts[hour] > 0 else 0
             for hour in range(HRS_PER_DAY)
         }
-
 
     @property
     def pv_performance_ratios(self) -> dict[int, float]:
@@ -333,6 +459,11 @@ class DailyStats:
         return sum(self._forecast_tomorrow_adjusted.values())
 
     @property
+    def losses(self) -> float:
+        """Return the calculated average losses in watts."""
+        return self._losses
+
+    @property
     def status(self) -> Status:
         """Return the current status of the statistics calculations."""
         return self._status
@@ -364,37 +495,101 @@ def performance_ratios(
     hourly_ratios: dict[int, float] = dict.fromkeys(range(HRS_PER_DAY), 1.0)
     average_ratios = dict.fromkeys(range(HRS_PER_DAY), 0.0)
 
+    logger.debug(
+        "Starting performance ratio calculations for %d days", DEFAULT_PV_MAX_DAYS
+    )
+
     for day in range(1, DEFAULT_PV_MAX_DAYS + 1):
         this_day = dt_util.now().replace(
             hour=0, minute=0, second=0, microsecond=0
         ) + timedelta(days=-day)
         this_day_str = this_day.strftime("%Y-%m-%d")
-        if (
-            forecasted_pv.get(this_day_str) is None
-            or soc.get(this_day_str) is None
-            or actual_pv.get(this_day_str) is None
-        ):
-            # No forecast details available for this day, go to the next day
+
+        # Check if all required data is available for this day
+        has_forecast = forecasted_pv.get(this_day_str) is not None
+        has_soc = soc.get(this_day_str) is not None
+        has_actual = actual_pv.get(this_day_str) is not None
+
+        if not (has_forecast and has_soc and has_actual):
+            logger.debug(
+                "Day %s: Skipping (forecast=%s, soc=%s, actual=%s)",
+                this_day_str,
+                has_forecast,
+                has_soc,
+                has_actual,
+            )
             continue
+
+        logger.debug(">>>Day %s: Processing hourly ratios", this_day_str)
         hourly_ratios = dict.fromkeys(range(HRS_PER_DAY), 1.0)
+
         for hour in range(HRS_PER_DAY):
             forecasted_pv_hour = forecasted_pv[this_day_str].get(hour)
             soc_hour = soc[this_day_str].get(hour)
             actual_pv_hour = actual_pv[this_day_str].get(hour)
+
             if forecasted_pv_hour is None or soc_hour is None or actual_pv_hour is None:
+                logger.debug(
+                    "Day %s hour %d: Missing data (forecast=%s, soc=%s, actual=%s) - using default ratio 1.0",
+                    this_day_str,
+                    hour,
+                    forecasted_pv_hour,
+                    soc_hour,
+                    actual_pv_hour,
+                )
                 continue
+
             if forecasted_pv_hour > 0 and soc_hour > 98:
-                hourly_ratios[hour] = actual_pv_hour / forecasted_pv_hour
+                ratio = actual_pv_hour / forecasted_pv_hour
+                hourly_ratios[hour] = ratio
+                logger.debug(
+                    "Day %s hour %d: Optimal conditions (forecast=%d > 0, soc=%d > 98) - "
+                    "calculated ratio = %d / %d = %.3f",
+                    this_day_str,
+                    hour,
+                    forecasted_pv_hour,
+                    soc_hour,
+                    actual_pv_hour,
+                    forecasted_pv_hour,
+                    ratio,
+                )
             else:
                 hourly_ratios[hour] = 1.0
+                reasons = []
+                if forecasted_pv_hour <= 0:
+                    reasons.append(f"forecast={forecasted_pv_hour} <= 0")
+                if soc_hour <= 98:
+                    reasons.append(f"soc={soc_hour} <= 98")
+                logger.debug(
+                    "Day %s hour %d: Not optimal (%s) - using default ratio 1.0",
+                    this_day_str,
+                    hour,
+                    ", ".join(reasons),
+                )
+
         daily_ratios[this_day_str] = hourly_ratios
+
+    logger.debug(">>>Calculating average ratios across %d days", len(daily_ratios))
 
     for hour in range(HRS_PER_DAY):
         if len(daily_ratios) == 0:
             average_ratios[hour] = 1.0
+            logger.debug(
+                "Hour %d: No daily data available - using default ratio 1.0", hour
+            )
         else:
-            total = sum(ratios.get(hour, 1.0) for _, ratios in daily_ratios.items())
+            daily_values = [ratios.get(hour, 1.0) for _, ratios in daily_ratios.items()]
+            total = sum(daily_values)
             average_ratios[hour] = total / len(daily_ratios)
+            logger.debug(
+                "Hour %d: Average ratio = %.3f (sum=%.3f / %d days, values=%s)",
+                hour,
+                average_ratios[hour],
+                total,
+                len(daily_ratios),
+                [f"{v:.2f}" for v in daily_values],
+            )
+
     logger.debug(
         "Unusual hourly ratios: %s",
         {
@@ -404,6 +599,7 @@ def performance_ratios(
         },
     )
     return average_ratios
+
 
 def start_and_end_utc(days=1) -> tuple[datetime, datetime]:
     """Return UTC start and end datetimes for a given number of days of history.

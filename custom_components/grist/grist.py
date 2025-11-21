@@ -286,7 +286,7 @@ class GristScheduler:
     async def _update(self) -> None:
         """Update forecaster, daily and battery data as needed."""
         if DEBUGGING and self._update_task_next_start > dt_util.now():
-            logger.debug("Next update in %s hours and %s minutes", (self._update_task_next_start - dt_util.now()).seconds // 3600, (self._update_task_next_start - dt_util.now()).seconds // 60 % 60)
+            # logger.debug("Next update in %s hours and %s minutes", (self._update_task_next_start - dt_util.now()).seconds // 3600, (self._update_task_next_start - dt_util.now()).seconds // 60 % 60)
             return
 
         # Verify that the forecaster is still loaded
@@ -679,4 +679,5 @@ class GristScheduler:
             "min_soc": self.minimum_soc,
             "start": self.grist_start,
             "end": self.grist_end,
+            "losses": self.calculated_stats.losses if self.calculated_stats else 0.0,
         }

@@ -311,7 +311,7 @@ class PVEntity_today(CoordinatorEntity):
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_pv_generation_today"
         self._attr_icon = "mdi:toggle-switch"
-        self._attr_name = "GRIST PV Today"
+        self._attr_name = "Grist_PV_today"
         self._device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=self._attr_name,
@@ -320,7 +320,7 @@ class PVEntity_today(CoordinatorEntity):
     @property
     def name(self) -> str | None:
         """Return the name of the PV today entity."""
-        return f"PV for {self._coordinator.data.get('pv_calculated_today_day', '')}"
+        return self._attr_name
 
     @property
     def unique_id(self) -> str | None:
@@ -335,7 +335,11 @@ class PVEntity_today(CoordinatorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str]:
         """Return the hourly PV generation values as state attributes."""
+        day: str = self._coordinator.data.get("pv_calculated_today_day", "")
         hours: dict[int, float] = self._coordinator.data.get("pv_calculated_today", {})
+        if not hours:
+            day: str = self._coordinator.data.get("pv_calculated_today_day", "")
+            return {"No pv generation found": day}
         converted_hours: dict[str, str] = {
             printable_hour(
                 hour
@@ -345,9 +349,7 @@ class PVEntity_today(CoordinatorEntity):
             + "w"
             for hour, watts in hours.items()
         }
-        if not converted_hours:
-            day: str = self._coordinator.data.get("pv_calculated_today_day", "")
-            return {"No pv generation found": day}
+        converted_hours["day"] = day
         return converted_hours
 
     @property
@@ -369,7 +371,7 @@ class PVEntity_tomorrow(CoordinatorEntity):
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_pv_generation_tomorrow"
         self._attr_icon = "mdi:toggle-switch"
-        self._attr_name = "GRIST PV Tomorrow"
+        self._attr_name = "Grist_PV_tomorrow"
         self._device_info = DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=self._attr_name,
@@ -378,7 +380,7 @@ class PVEntity_tomorrow(CoordinatorEntity):
     @property
     def name(self) -> str | None:
         """Return the name of the PV tomorrow entity."""
-        return f"PV for {self._coordinator.data.get('pv_calculated_tomorrow_day', '')}"
+        return self._attr_name
 
     @property
     def unique_id(self) -> str | None:
@@ -393,6 +395,7 @@ class PVEntity_tomorrow(CoordinatorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str]:
         """Return the hourly PV generation values as state attributes."""
+        day: str = self._coordinator.data.get("pv_calculated_tomorrow_day", "")
         hours: dict[int, float] = self._coordinator.data.get(
             "pv_calculated_tomorrow", 0
         )
@@ -406,6 +409,7 @@ class PVEntity_tomorrow(CoordinatorEntity):
             + "w"
             for hour, watts in hours.items()
         }
+        converted_hours["day"] = day
         return converted_hours
 
     @property

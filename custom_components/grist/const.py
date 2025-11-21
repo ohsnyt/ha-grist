@@ -9,11 +9,14 @@ All constants are intended to be imported and used by other modules in the integ
 
 from enum import Enum, StrEnum
 
+from sqlalchemy import false
+
 FORECASTER_INTEGRATIONS = [
     "solcast_solar",
     "forecast_solar",
     "open_meteo_solar_forecast",
 ]
+
 
 class Status(Enum):
     """Component status for the GRIST integration."""
@@ -24,6 +27,7 @@ class Status(Enum):
     STARTING = 3
     RATE_LIMITED = 4
     MQTT_OFF = 5
+
 
 class MqttErrors(Enum):
     """MQTT errors for the GRIST integration."""
@@ -70,7 +74,7 @@ PLATFORMS = ["sensor"]
 UPDATE_INTERVAL = 10  # Update interval in seconds
 
 # Enable detailed debug logging for the integration
-DEBUGGING = True
+DEBUGGING = false
 
 # Storage keys and versioning
 FORECAST_KEY = "grist_forecast"
@@ -82,6 +86,8 @@ SENSOR_BATTERY_SOC = "sensor.deye_sunsynk_sol_ark_battery_state_of_charge"
 SENSOR_MIN_BATTERY_SOC = "sensor.deye_sunsynk_sol_ark_battery_stop_discharge_capacity"
 SENSOR_LOAD_POWER = "sensor.deye_sunsynk_sol_ark_load_power"
 SENSOR_PV_POWER = "sensor.deye_sunsynk_sol_ark_pv_power"
+SENSOR_GRID_POWER = "sensor.deye_sunsynk_sol_ark_grid_power"
+SENSOR_BATTERY_POWER = "sensor.deye_sunsynk_sol_ark_battery_power"
 SENSOR_BATTERY_FLOAT_VOLTAGE = (
     "number.deye_sunsynk_sol_ark_battery_float_charge_voltage"
 )
